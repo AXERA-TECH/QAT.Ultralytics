@@ -39,7 +39,7 @@ seaborn>=0.11.0
 # openvino-dev>=2023.0  # OpenVINO export
 onnxruntime==1.21.0
 onnxruntime-gpu==1.21.0
-onnxscript==0.4.0
+onnxscript==0.5.2
 # Deploy ----------------------------------------------------------------------
 setuptools>=70.0.0 # Snyk vulnerability fix
 # tritonclient[all]~=2.24.0

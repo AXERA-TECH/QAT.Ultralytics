@@ -1,0 +1,3 @@
+[submodule "QAT.axera"]
+	path = QAT.axera
+	url = https://github.com/AXERA-TECH/QAT.axera

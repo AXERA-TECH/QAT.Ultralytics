@@ -1,0 +1,16 @@
+{
+    "global_config": {
+        "is_symmetric": false,
+        "input": {
+            "dtype": "U8",
+            "qmin": 0,
+            "qmax": 255
+        },
+        "weight": {
+            "dtype": "S8",
+            "qmin": -127,
+            "qmax": 127
+        }
+    },
+    "regional_configs": []
+}

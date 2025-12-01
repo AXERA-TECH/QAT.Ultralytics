@@ -1,0 +1,7 @@
+torch==2.6.0  # see https://pytorch.org/get-started/locally (recommended)
+torchvision>=0.9.0
+onnxruntime==1.21.0
+onnxruntime-gpu==1.21.0
+onnxscript==0.4.0
+onnxslim==0.1.48
+ultralytics==8.3.104

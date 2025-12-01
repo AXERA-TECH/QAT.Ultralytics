@@ -1,0 +1,8 @@
+onnx==1.17.0
+onnx-graphsurgeon
+onnxruntime==1.19.2
+onnxscript==0.2.2
+onnxslim==0.1.48
+torch==2.6.0+cu126
+torchvision==0.21.0+cu126
+torchaudio==2.6.0+cu126

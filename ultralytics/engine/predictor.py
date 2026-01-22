@@ -349,7 +349,9 @@ class BasePredictor:
                     # float_model.train()
                     float_model = float_model.to("cuda")
                     inputs = torch.rand(1, 3, 640, 640).to("cuda")
-                    dynamic_shapes = {"x":{0: torch.export.Dim.AUTO}}
+                    dynamic_shapes = {
+                        "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
+                    }
                     exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
                     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
                     prepared_model.load_state_dict(torch.load("./last_checkpoint.pth"))

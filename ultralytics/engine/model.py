@@ -858,7 +858,9 @@ class Model(torch.nn.Module):
         quantizer.set_regional(regional_configs)
         self.model = self.model.to("cpu")
         inputs = torch.rand(1, 3, 640, 640).to("cpu")
-        dynamic_shapes = {"x":{0: torch.export.Dim.AUTO}}
+        dynamic_shapes = {
+            "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
+        }
         exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
         prepared_model = prepare_qat_pt2e(exported_model, quantizer)
         # torch.ao.quantization.move_exported_model_to_eval(prepared_model)

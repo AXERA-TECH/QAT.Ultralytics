@@ -27,6 +27,10 @@ import json
 import time
 from pathlib import Path
 
+import copy
+from onnxslim import slim
+import onnx
+
 import numpy as np
 import torch
 
@@ -160,7 +164,7 @@ class BaseValidator:
             from ultralytics.nn.tasks import DetectionModel
             from ultralytics.utils import LOGGER, RANK
             from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
-            float_model = DetectionModel(model.yaml, nc=80, verbose=True and RANK == -1)
+            float_model = DetectionModel(model.yaml, nc=model.yaml['nc'], verbose=True and RANK == -1)
             float_model.load(model)
             # quantizer
             global_config, regional_configs = load_config("./config.json")
@@ -169,15 +173,31 @@ class BaseValidator:
             quantizer.set_regional(regional_configs)
             # float_model.train()
             float_model = float_model.to("cuda")
-            inputs = torch.rand(1, 3, 640, 640).to("cuda")
+            inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
+            qat_onnx_sp = self.args.get('qat_onnx_sp', './last_checkpoint.onnx')
+
+            inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
+            print(f'export onnx input shape: {inputs.shape}')
             dynamic_shapes = {
                 "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
             }
             exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
             prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-            prepared_model.load_state_dict(torch.load("./last_checkpoint.pth"))
+            prepared_model.load_state_dict(torch.load(self.args.qat_pt_path))
+            # qat_onnx_sp
             quantized_model = convert_pt2e(prepared_model)
-            
+            onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
+            onnx_program.optimize()
+            path_obj = Path(qat_onnx_sp)
+            path_parent = path_obj.parent
+            file_name = path_obj.stem
+            onnx_program.save(qat_onnx_sp)
+
+            model_simp = slim(onnx_program.model_proto)
+            sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
+            onnx.save(model_simp, sim_path)
+            print(f"save onnx model to [{sim_path}] Successfully!")
+
             if str(self.args.model).endswith(".yaml") and model is None:
                 LOGGER.warning("WARNING ⚠️ validating an untrained model YAML will result in 0 mAP.")
             callbacks.add_integration_callbacks(self)

@@ -26,7 +26,6 @@ from ultralytics.utils import (
 )
 
 import copy
-import torch
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
     get_symmetric_quantization_config,
@@ -830,26 +829,32 @@ class Model(torch.nn.Module):
         self.max_stride = int(self.model.stride.max())
 
         # export onnx
-        import torch
         import onnx
         from onnxsim import simplify
 
-        model_name = custom['model'][:-5]
-        inputs = torch.rand(1, 3, 640, 640).to("cuda")
+        inp_h, inp_w = kwargs.get('qat_onnx_imgsz', [640, 640])
+        qat_onnx_sp = kwargs.get('qat_onnx_sp', './last_checkpoint.onnx')
+        path_obj = Path(qat_onnx_sp)
+        path_parent = path_obj.parent
+        file_name = path_obj.stem
+        sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
+
+        inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
+        print(f'export onnx input shape: {inputs.shape}')
         self.model = self.model.to("cuda")
         onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
         onnx_program.optimize()
-        onnx_program.save("./{}_dynamo_float.onnx".format(model_name))
+        onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
         torch.onnx.export(
             self.model,
             inputs,
-            "./{}_float.onnx".format(model_name),
+            f"{path_parent}/{file_name}_float.onnx",
             opset_version=18
         )
-        onnx_model = onnx.load("./{}_float.onnx".format(model_name))
+        onnx_model = onnx.load(f"{path_parent}/{file_name}_float.onnx")
         model_simp, check = simplify(onnx_model)
         assert check, "Simplified ONNX model could not be validated"
-        onnx.save(model_simp, "./{}_float_sim.onnx".format(model_name))
+        onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
 
         # quantizer
         global_config, regional_configs = load_config("./config.json")
@@ -857,7 +862,7 @@ class Model(torch.nn.Module):
         quantizer.set_global(global_config)
         quantizer.set_regional(regional_configs)
         self.model = self.model.to("cpu")
-        inputs = torch.rand(1, 3, 640, 640).to("cpu")
+        inputs = torch.rand(1, 3, inp_h, inp_w).to("cpu")
         dynamic_shapes = {
             "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
         }
@@ -878,21 +883,21 @@ class Model(torch.nn.Module):
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
         
-        torch.save(self.trainer.qat_model.state_dict(), "./last_checkpoint.pth")
+        torch.save(self.trainer.qat_model.state_dict(), f"{path_parent}/{file_name}.pth")
         
         import copy
         prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
         quantized_model = convert_pt2e(prepared_model_copy)
         onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
         onnx_program.optimize()
-        onnx_program.save("./{}_qat.onnx".format(model_name))
+        onnx_program.save(f"{path_parent}/{file_name}_qat.onnx")
 
         from onnxslim import slim
         import onnx
 
-        model = onnx.load("./{}_qat.onnx".format(model_name))
+        model = onnx.load(f"{path_parent}/{file_name}_qat.onnx")
         model_simp = slim(model)
-        sim_path = "./{}_qat_slim.onnx".format(model_name)
+        sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
         onnx.save(model_simp, sim_path)
         print(f"save onnx model to [{sim_path}] Successfully!")
 

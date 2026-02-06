@@ -7,7 +7,7 @@
 |yolov11s_8w8f_qdq.onnx|0.456|0.628|
 
 ## 环境安装
-基于官方工程，安装ultralytics库
+基于官方工程，安装ultralytics库。yolo11n或自定义的轻量级模型 安装环境，参考[nano模型环境安装](./README_nano.md)。
 
 ```
 pip install -r requirements.txt

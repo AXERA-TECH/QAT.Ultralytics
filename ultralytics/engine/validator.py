@@ -175,6 +175,10 @@ class BaseValidator:
             float_model = float_model.to("cuda")
             inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
             qat_onnx_sp = self.args.get('qat_onnx_sp', './last_checkpoint.onnx')
+            path_obj = Path(qat_onnx_sp)
+            path_parent = path_obj.parent
+            path_parent.mkdir(parents=True, exist_ok=True)
+            file_name = path_obj.stem
 
             inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
             print(f'export onnx input shape: {inputs.shape}')
@@ -188,9 +192,6 @@ class BaseValidator:
             quantized_model = convert_pt2e(prepared_model)
             onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
             onnx_program.optimize()
-            path_obj = Path(qat_onnx_sp)
-            path_parent = path_obj.parent
-            file_name = path_obj.stem
             onnx_program.save(qat_onnx_sp)
 
             model_simp = slim(onnx_program.model_proto)

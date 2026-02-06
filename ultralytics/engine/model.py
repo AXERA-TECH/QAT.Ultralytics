@@ -836,6 +836,7 @@ class Model(torch.nn.Module):
         qat_onnx_sp = kwargs.get('qat_onnx_sp', './last_checkpoint.onnx')
         path_obj = Path(qat_onnx_sp)
         path_parent = path_obj.parent
+        path_parent.mkdir(parents=True, exist_ok=True)
         file_name = path_obj.stem
         sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
 

@@ -143,6 +143,7 @@ def export_formats():
         ["NCNN", "ncnn", "_ncnn_model", True, True, ["batch", "half"]],
         ["IMX", "imx", "_imx_model", True, True, ["int8", "fraction"]],
         ["RKNN", "rknn", "_rknn_model", False, False, ["batch", "name"]],
+        # ["QATOnnx", "axear", ".onnx", False, True, ["batch", "name"]],
     ]
     return dict(zip(["Format", "Argument", "Suffix", "CPU", "GPU", "Arguments"], zip(*x)))
 

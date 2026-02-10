@@ -48,7 +48,9 @@ def generate_ddp_file(trainer):
         - Training initialization code
     """
     module, name = f"{trainer.__class__.__module__}.{trainer.__class__.__name__}".rsplit(".", 1)
-
+    # print(f'trainer {trainer}')
+    print(f'module {module}')
+    print(f'name {name}')
     content = f"""
 # Ultralytics Multi-GPU training temp file (should be automatically deleted after use)
 overrides = {vars(trainer.args)}
@@ -72,7 +74,9 @@ if __name__ == "__main__":
         dir=USER_CONFIG_DIR / "DDP",
         delete=False,
     ) as file:
+        print(f'content {content}')
         file.write(content)
+    # exit()
     return file.name
 
 

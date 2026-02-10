@@ -1,0 +1,66 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        // {
+        //     "name": "Python Debugger: Current File",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "${workspaceFolder}/rtdetrv2_pytorch/tools/train.py",
+        //     "cwd": "${workspaceFolder}/rtdetrv2_pytorch",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     "env": {
+        //         "CUDA_VISIBLE_DEVICES": "2",
+        //         // "OMP_NUM_THREADS": "1" // 禁用多线程（减少调试时的资源占用）
+        //     },
+        //     "args": [
+        //         // "-c", "configs/rtdetrv2/rtdetrv2_r18vd_120e_cocoTest.yml",
+        //         "-c", "configs/rtdetrv2/rtdetrv2_r18vd_120e_cocoQAT.yml",
+        //         "-r", "weights/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
+        //     ]
+        // }
+
+        // {
+        //     "name": "Python Debugger: Current File",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "${workspaceFolder}/train.py",
+        //     "cwd": "${workspaceFolder}",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     // "env": {
+        //     //     "CUDA_VISIBLE_DEVICES": "2",
+        //     //     "OMP_NUM_THREADS": "1" // 禁用多线程（减少调试时的资源占用）
+        //     // },
+        //     "args": [
+        //         // "-c", "configs/rtdetrv2/rtdetrv2_r18vd_120e_cocoTest.yml",
+        //         "-m", "torch.distributed.run",
+        //         "--nproc_per_node", "2",
+        //         // "train.py"
+        //     ]
+        // }
+
+        {
+            "name": "Python Debugger: Distributed Training",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "torch.distributed.run",
+            "args": [
+                "--nproc_per_node", "2",
+                "${workspaceFolder}/train.py"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1",
+                "OMP_NUM_THREADS": "1",
+                "NCCL_DEBUG": "INFO",
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}

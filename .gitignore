@@ -219,3 +219,6 @@ __marimo__/
 *.pt
 *.pth
 *.onnx
+
+# 训练、测试目录
+runs

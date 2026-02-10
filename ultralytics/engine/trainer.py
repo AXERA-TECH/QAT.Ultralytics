@@ -448,7 +448,11 @@ class BaseTrainer:
                 # with autocast(self.amp):
                 batch = self.preprocess_batch(batch)
                 # print(batch['img'].shape)
-                criterion = self.model.init_criterion()
+                # print(type(str(type(self.model))))
+                if str(type(self.model)).find('DistributedDataParallel') != -1:
+                    criterion = self.model.module.init_criterion()
+                else:
+                    criterion = self.model.init_criterion()
                 preds = self.qat_model(batch['img'])
                 loss, self.loss_items = criterion(preds, batch)
                 # loss, self.loss_items = self.model(batch)
@@ -609,6 +613,7 @@ class BaseTrainer:
                 "epoch": self.epoch,
                 "best_fitness": self.best_fitness,
                 "model": None,  # resume and final checkpoints derive from EMA
+                "model_qat": self.qat_model.state_dict() if hasattr(self, 'qat_model') and self.qat_model is not None else None,
                 "ema": deepcopy(self.ema.ema).half(),
                 "updates": self.ema.updates,
                 "optimizer": convert_optimizer_state_dict_to_fp16(deepcopy(self.optimizer.state_dict())),

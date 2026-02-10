@@ -754,7 +754,7 @@ class Model(torch.nn.Module):
         """
         self._check_is_pytorch_model()
         from .exporter import Exporter
-
+        print(f'self.model {self.model}')
         custom = {
             "imgsz": self.model.args["imgsz"],
             "batch": 1,
@@ -839,13 +839,19 @@ class Model(torch.nn.Module):
         path_parent.mkdir(parents=True, exist_ok=True)
         file_name = path_obj.stem
         sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
-
-        inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
+        if RANK >= 0:
+            device = f'cuda:{RANK}'
+        else:
+            device = 'cuda'
+        inputs = torch.rand(1, 3, inp_h, inp_w).to('cpu')
         print(f'export onnx input shape: {inputs.shape}')
-        self.model = self.model.to("cuda")
+        # print(inputs.device)
+        # print(next(iter(self.model.state_dict().values())).device) 
+        # print(f'RANK {RANK}')
         onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
         onnx_program.optimize()
-        onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
+        if RANK in [-1, 0]:
+            onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
         torch.onnx.export(
             self.model,
             inputs,
@@ -855,7 +861,8 @@ class Model(torch.nn.Module):
         onnx_model = onnx.load(f"{path_parent}/{file_name}_float.onnx")
         model_simp, check = simplify(onnx_model)
         assert check, "Simplified ONNX model could not be validated"
-        onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
+        if RANK in [-1, 0]:
+            onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
 
         # quantizer
         global_config, regional_configs = load_config("./config.json")
@@ -872,9 +879,9 @@ class Model(torch.nn.Module):
         # torch.ao.quantization.move_exported_model_to_eval(prepared_model)
         # torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
 
-        self.trainer.qat_model = prepared_model.to("cuda")
-        self.model = self.model.to("cuda")
- 
+        self.trainer.qat_model = prepared_model.to(device)
+        self.model = self.model.to(device)
+
         self.trainer.hub_session = self.session  # attach optional HUB session
         self.trainer.train()
         # Update model and cfg after training
@@ -883,24 +890,22 @@ class Model(torch.nn.Module):
             self.model, self.ckpt = attempt_load_one_weight(ckpt)
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
-        
-        torch.save(self.trainer.qat_model.state_dict(), f"{path_parent}/{file_name}.pth")
-        
-        import copy
-        prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
-        quantized_model = convert_pt2e(prepared_model_copy)
-        onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
-        onnx_program.optimize()
-        onnx_program.save(f"{path_parent}/{file_name}_qat.onnx")
+            torch.save(self.trainer.qat_model.state_dict(), f"{path_parent}/{file_name}.pth")
+            import copy
+            prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
+            quantized_model = convert_pt2e(prepared_model_copy)
+            onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
+            onnx_program.optimize()
+            onnx_program.save(f"{path_parent}/{file_name}_qat.onnx")
 
-        from onnxslim import slim
-        import onnx
+            from onnxslim import slim
+            import onnx
 
-        model = onnx.load(f"{path_parent}/{file_name}_qat.onnx")
-        model_simp = slim(model)
-        sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
-        onnx.save(model_simp, sim_path)
-        print(f"save onnx model to [{sim_path}] Successfully!")
+            model = onnx.load(f"{path_parent}/{file_name}_qat.onnx")
+            model_simp = slim(model)
+            sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
+            onnx.save(model_simp, sim_path)
+            print(f"save onnx model to [{sim_path}] Successfully!")
 
         return self.metrics
 

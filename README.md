@@ -16,7 +16,7 @@ pip install -r requirements.txt
 安装额外库
 
 ```
-pip install ultralytics
+pip install e . # ultralytics
 ```
 
 我们发现 `onnxruntime` 和 `onnxscript` 的其他版本可能引起精度误差和导出错误，因此**pytorch\==2.6; onnxruntime\==1.21.0 onnxscript\==0.4.0** 是必须的。
@@ -99,6 +99,7 @@ test会加载根目录下的bus.jpg文件进行推理，然后输出推理结果
 }
 
 ```
+**原因**：QAT时为保证`MatMul`算子精度，避免上溢出等问题，未对`MatMul`做更细粒度的量化，而`MatMul`前的`shape`变换算子，被统一纳入子图做QAT，它们在训练时的量化精度相同，所以在转换时需要与`MatMul`算子置为相同的量化数据类型。
 其中`layer_names`中的节点为`MatMul`节点前的`reshape`,`split`,`transpose`等算子。
 
 ##### 2.1 使用Netron打开`yolo11s_qat_slim.onnx`进行查找，搜索`MatMul`
@@ -110,8 +111,6 @@ test会加载根目录下的bus.jpg文件进行推理，然后输出推理结果
 ![alt text](assets/image-1.png)
 
 ##### 2.2 将相关节点放入`layer_names`中，并置为`S16`数据类型。
-
-**注**：QAT时为保证`MatMul`算子精度，避免上溢出等问题，未对`MatMul`做更细粒度的量化，而`MatMul`前的`shape`变换算子，被统一纳入子图做QAT，它们在训练时的量化精度相同，所以在转换时需要与`MatMul`算子置为相同的量化数据类型。
 
 #### 3、转换
 

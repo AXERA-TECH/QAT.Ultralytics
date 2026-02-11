@@ -157,6 +157,14 @@ class BaseValidator:
             self.args.half = self.device.type != "cpu" and trainer.amp
             model = trainer.ema.ema or trainer.model
             model = model.half() if self.args.half else model.float()
+            # 优先使用qat_model进行验证（如果存在），而不是浮点模型
+            # if hasattr(trainer, 'qat_model') and trainer.qat_model is not None:
+            #     model = trainer.qat_model
+            #     torch.ao.quantization.move_exported_model_to_eval(model)
+            # else:
+            #     model = trainer.ema.ema or trainer.model
+            #     model = model.half() if self.args.half else model.float()
+            #     model.eval()
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()

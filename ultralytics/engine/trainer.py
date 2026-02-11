@@ -325,7 +325,8 @@ class BaseTrainer:
             self.validator = self.get_validator()
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix="val")
             self.metrics = dict(zip(metric_keys, [0] * len(metric_keys)))
-            self.ema = ModelEMA(self.model)
+            # 不适用EMA
+            self.ema = ModelEMA(self.model, decay=0.)
             if self.args.plots:
                 self.plot_training_labels()
 
@@ -373,6 +374,7 @@ class BaseTrainer:
         epoch = self.start_epoch
         self.optimizer.zero_grad()  # zero any resumed gradients to ensure stability on train start
         # self.qat_model.apply(enable_learn)
+        torch.ao.quantization.move_exported_model_to_train(self.qat_model)    
         while True:
             # self.qat_model.train()
             # # Optionally disable observer/batchnorm stats after certain number of epochs
@@ -833,7 +835,7 @@ class BaseTrainer:
         start_epoch = ckpt.get("epoch", -1) + 1
         if ckpt.get("optimizer", None) is not None:
             self.optimizer.load_state_dict(ckpt["optimizer"])  # optimizer
-            best_fitness = ckpt["best_fitness"]
+            # best_fitness = ckpt["best_fitness"]
         if self.ema and ckpt.get("ema"):
             self.ema.ema.load_state_dict(ckpt["ema"].float().state_dict())  # EMA
             self.ema.updates = ckpt["updates"]

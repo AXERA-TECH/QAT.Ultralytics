@@ -27,7 +27,6 @@ import json
 import time
 from pathlib import Path
 
-import copy
 from onnxslim import slim
 import onnx
 
@@ -150,12 +149,14 @@ class BaseValidator:
         """
         self.training = trainer is not None
         augment = self.args.augment and (not self.training)
+        qat_model = None
         if self.training:
             self.device = trainer.device
             self.data = trainer.data
             # Force FP16 val during training
             self.args.half = self.device.type != "cpu" and trainer.amp
-            model = trainer.ema.ema or trainer.model
+            qat_model = getattr(trainer, "qat_model", None)
+            model = trainer.model if qat_model is not None else (trainer.ema.ema or trainer.model)
             model = model.half() if self.args.half else model.float()
             # 优先使用qat_model进行验证（如果存在），而不是浮点模型
             # if hasattr(trainer, 'qat_model') and trainer.qat_model is not None:
@@ -168,6 +169,8 @@ class BaseValidator:
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
+            if qat_model is not None:
+                qat_model.eval()
         else:
             from ultralytics.nn.tasks import DetectionModel
             from ultralytics.utils import LOGGER, RANK
@@ -180,15 +183,10 @@ class BaseValidator:
             quantizer.set_global(global_config) 
             quantizer.set_regional(regional_configs)
             # float_model.train()
-            float_model = float_model.to("cuda")
+            float_model = float_model.to(self.device)
             inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
-            qat_onnx_sp = self.args.get('qat_onnx_sp', './last_checkpoint.onnx')
-            path_obj = Path(qat_onnx_sp)
-            path_parent = path_obj.parent
-            path_parent.mkdir(parents=True, exist_ok=True)
-            file_name = path_obj.stem
 
-            inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
+            inputs = torch.rand(2, 3, inp_h, inp_w).to(self.device)
             print(f'export onnx input shape: {inputs.shape}')
             dynamic_shapes = {
                 "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
@@ -196,16 +194,11 @@ class BaseValidator:
             exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
             prepared_model = prepare_qat_pt2e(exported_model, quantizer)
             prepared_model.load_state_dict(torch.load(self.args.qat_pt_path))
-            # qat_onnx_sp
+            # export quantized model
             quantized_model = convert_pt2e(prepared_model)
-            onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
-            onnx_program.optimize()
-            onnx_program.save(qat_onnx_sp)
-
-            model_simp = slim(onnx_program.model_proto)
-            sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
-            onnx.save(model_simp, sim_path)
-            print(f"save onnx model to [{sim_path}] Successfully!")
+            torch.ao.quantization.move_exported_model_to_eval(quantized_model)
+            torch.ao.quantization.allow_exported_model_train_eval(quantized_model)
+            quantized_model.eval()
 
             if str(self.args.model).endswith(".yaml") and model is None:
                 LOGGER.warning("WARNING ⚠️ validating an untrained model YAML will result in 0 mAP.")
@@ -263,12 +256,7 @@ class BaseValidator:
             
             # Inference
             with dt[1]:
-                if hasattr(trainer, 'qat_model'):
-                    from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
-                    import copy
-                    qat_model = copy.deepcopy(trainer.qat_model)
-                    if isinstance(qat_model, torch.fx.graph_module.GraphModule):
-                        torch.ao.quantization.move_exported_model_to_eval(qat_model)
+                if self.training and qat_model is not None:
                     qat_preds = qat_model(batch['img'])
                     det_id = list(model.model._modules.keys())[-1]
                     if isinstance(qat_preds, dict):
@@ -277,13 +265,10 @@ class BaseValidator:
                     else:
                         qat_preds_infer = model.model._modules.get(det_id)._inference(qat_preds)
                     preds = (qat_preds_infer, qat_preds)
-                    # print('train in qat!')
+                elif self.training:
+                    preds = model(batch["img"])
                 else:
-                    import copy
-                    qat_model = copy.deepcopy(quantized_model)
-                    if isinstance(qat_model, torch.fx.graph_module.GraphModule):
-                        torch.ao.quantization.move_exported_model_to_eval(qat_model)
-                    qat_preds = qat_model(batch['img'])
+                    qat_preds = quantized_model(batch['img'])
                     det_id = list(model.model.model._modules.keys())[-1]
                     if isinstance(qat_preds, dict):
                         qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds['one2one'])
@@ -291,37 +276,7 @@ class BaseValidator:
                     else:
                         qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds)
                     preds = (qat_preds_infer, qat_preds)
-                    # # quantizer
-                    # global_config, regional_configs = load_config("./config.json")
-                    # quantizer = AXQuantizer()
-                    # quantizer.set_global(global_config) 
-                    # quantizer.set_regional(regional_configs)
-                    # float_model.train()
-                    # float_model = float_model.to("cuda")
-                    # inputs = torch.rand(1, 3, 640, 640).to("cuda")
-                    # dynamic_shapes = {"x":{0: torch.export.Dim.AUTO}}
-                    # exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
-                    # prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-                    # prepared_model.load_state_dict(torch.load("./last_checkpoint.pth"))
-                    # quantized_model = convert_pt2e(prepared_model)
 
-                    # preds = model(batch["img"], augment=augment)
-                    
-                    # # onnx session
-                    # import onnxruntime as ort
-                    # sess = ort.InferenceSession(self.args.onnxpath)
-                    # ## for qat_onnx_model
-                    # qat_preds = sess.run(None, {"x": batch['img'].cpu().numpy()})
-                    # qat_preds[0] = torch.Tensor(qat_preds[0]).to(batch['img'])
-                    # qat_preds[1] = torch.Tensor(qat_preds[1]).to(batch['img'])
-                    # qat_preds[2] = torch.Tensor(qat_preds[2]).to(batch['img'])
-                    # det_id = list(model.model.model._modules.keys())[-1]
-                    # if isinstance(qat_preds, dict):
-                    #     qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds['one2one'])
-                    #     qat_preds_infer = model.model.model._modules.get(det_id).postprocess(qat_preds_infer.permute(0, 2, 1), 300, 80)
-                    # else:
-                    #     qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds)
-                    # preds = (qat_preds_infer, qat_preds)
             # Loss
             with dt[2]:
                 if self.training:

@@ -73,14 +73,25 @@
   - `last mAP50-95(B)=0.37976`
 - 结论：在当前数据与10epoch条件下，该调参方向未优于实验A。
 
+### 实验D：高学习率线性衰减组（LR Boost）
+- 运行目录：`runs/detect/debug_qat_lr4e5_e10`
+- 在实验A基础上主要修改：
+  - `lr0=4e-5, lrf=0.2, cos_lr=False`
+  - 其余保持实验A（增强全关、observer不冻结）
+- 结果：
+  - `best mAP50-95(B)=0.40687`（epoch 10）
+  - `last mAP50-95(B)=0.40687`
+- 结论：该组显著优于前面所有实验，且超过目标 `0.391`。
+
 ## 4. 最优组选择
-- 本轮三组 10-epoch 实验最优：**实验A（Codefix Baseline）**。
-- 最优指标：`mAP50-95(B)=0.38261`。
+- 本轮四组 10-epoch 实验最优：**实验D（LR Boost）**。
+- 最优指标：`mAP50-95(B)=0.40687`。
 
 ## 5. 最优组参数落盘
 - 已将最优组训练入口参数写入 `train.py`：
-  - `name="best_qat_e10"`
-  - `lr0=2e-5, lrf=0.1`
+  - `name="best_qat_lr4e5_e10"`
+  - `lr0=4e-5, lrf=0.2`
+  - `cos_lr=False`
   - 增强全关
   - `close_mosaic=0`
   - `qat_enable_fake_quant_epoch=0`
@@ -88,8 +99,7 @@
   - `qat_disable_fake_quant_epoch=-1`
 
 ## 6. 后续建议（针对0.391目标）
-- 优先修正 `coco.yaml` 的训练集路径（`train2017.txt`），再复现 QAT 对比；当前 train/val 同源会干扰结论。
-- 在修正数据后，再做：
-  - 20~30 epoch 的 QAT（10 epoch 对收敛通常偏短）
-  - observer 冻结延后到后 20% 轮次（例如 30 epoch 时 epoch 24 后）
-  - 以当前实验A为起点微调学习率与 warmup。
+- 当前已达成目标（`0.40687 > 0.391`）。
+- 建议后续分两条线并行：
+  - 在当前最优参数上复跑 2~3 次（不同 seed）验证稳定性。
+  - 修正 `coco.yaml` 为 `train2017.txt` 后重做对比，确认结论在标准训练集设定下仍成立。

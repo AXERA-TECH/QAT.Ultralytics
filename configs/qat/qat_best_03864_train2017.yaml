@@ -1,0 +1,31 @@
+# Best-known train2017 QAT baseline (mAP50-95=0.38640)
+model: yolo11n.yaml
+weights: yolo11n.pt
+data: coco_train2017.yaml
+batch: 64
+epochs: 10
+imgsz: 640
+device: [3]
+optimizer: SGD
+lr0: 4.0e-5
+lrf: 0.2
+cos_lr: false
+warmup_epochs: 0.0
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.0
+degrees: 0.0
+translate: 0.0
+scale: 0.0
+fliplr: 0.0
+mosaic: 0.0
+mixup: 0.0
+close_mosaic: 0
+qat_enable_fake_quant_epoch: 7
+qat_disable_observer_epoch: 9
+qat_disable_fake_quant_epoch: -1
+qat_onnx_imgsz: [640, 640]
+qat_onnx_sp: ./debug/exp_train2017_best_03864.onnx
+project: runs/detect
+name: best_qat_train2017_03864_e10
+exist_ok: true

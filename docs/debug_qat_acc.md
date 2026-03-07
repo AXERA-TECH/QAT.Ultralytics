@@ -103,3 +103,58 @@
 - 建议后续分两条线并行：
   - 在当前最优参数上复跑 2~3 次（不同 seed）验证稳定性。
   - 修正 `coco.yaml` 为 `train2017.txt` 后重做对比，确认结论在标准训练集设定下仍成立。
+
+---
+
+## 7. train2017持续调参记录（目标 `mAP50-95 >= 0.391`）
+
+> 说明：本节为后续在 `coco_train2017.yaml` 上的持续排查，均固定 `device=[3]`，并尽量保持 `10 epoch` 配置。
+
+### 7.1 已完成/已验证结果
+- `debug_qat_lr4e5_train2017_e10`: best `0.37426`
+- `debug_qat_train2017_tune1_e10`: best `0.36765`
+- `debug_qat_train2017_tune2_e10`: best `0.33389`
+- `debug_qat_train2017_tune3_e10`: best `0.38000`
+- `debug_qat_train2017_tune4_e10`: best `0.38640`（当前 train2017 线最佳）
+- `debug_qat_train2017_tune5_e10`: best `0.38398`
+- `debug_qat_train2017_tune6_e10`: best `0.38464`
+- `debug_qat_train2017_tune7_e10`: best `0.38398`
+
+### 7.1.1 `0.3864`基线固化保存
+- 已固化的最佳 train2017 基线（`mAP50-95=0.38640`）：
+  - 训练脚本：`train_best_03864_train2017.py`
+  - 参数文件：`configs/qat/qat_best_03864_train2017.yaml`
+  - 量化配置：`configs/qat/config_best_03864_asym.json`
+  - 已验证权重：`runs/detect/debug_qat_train2017_tune4_e10/weights/best.pt`
+
+### 7.2 代码问题新增排查
+- **数据集哈希卡顿问题（`ultralytics/data/dataset.py`）**
+  - 现象：`train2017` 每轮启动时在 `get_hash(self.label_files + self.im_files)` 卡住很久（I/O wait）。
+  - 处理：增加环境开关 `ULTRALYTICS_SKIP_DATASET_HASH=1`，仅用于调试加速，跳过缓存哈希一致性断言。
+- **EMA 在当前 QAT实现下不兼容**
+  - 现象1：QAT+EMA update 触发 shape mismatch（observer/fake-quant buffer维度不一致）。
+  - 现象2：修复 shape 后，训练第1轮验证出现全零指标（`mAP=0`）。
+  - 现象3：保存 checkpoint 时报错 `Can't pickle local object 'annotate_bias.<locals>.derive_qparams_fn'`。
+  - 结论：当前代码路径下，QAT 不应直接套用标准 EMA 流程（已回退到“QAT不走EMA更新”稳定路径）。
+
+### 7.3 新增实验
+- `debug_qat_train2017_tune9_emafix_tune4_e10`（EMA兼容性验证组）
+  - 参数：同 `tune4`，并尝试在 QAT 路径启用 EMA。
+  - 结果：**失败**；epoch1 记录为 `mAP50-95=0`，并在保存阶段崩溃（不可序列化）。
+  - 结论：作为代码问题定位用例保留，不纳入参数最优比较。
+
+- `debug_qat_train2017_tune10_headfp32_e10`（observer策略：检测头FP32）
+  - 改动：`config.json` 采用区域配置，将检测头对应 conv 节点（`conv2d_63~conv2d_86`）设为 `FP32`，其余层保持全局QAT配置。
+  - 训练参数：沿用 `tune4`（`lr0=4e-5, lrf=0.2, fq@7, obs_off@9`）。
+  - 当前进度：运行中；已完成
+    - epoch1: `mAP50-95=0.38249`
+    - epoch2: `mAP50-95=0.38464`
+  - 阶段结论：与 `tune4` 前两轮基本一致；需等待 fake-quant 开启后的 epoch8~10 判断该 observer 策略是否带来提升。
+
+- `debug_qat_train2017_tune11_neckheadfp32_e10`（observer策略：Neck+Head大范围FP32）
+  - 改动：`config.json` 将 `conv2d_40~conv2d_86` 设置为 `FP32`（只量化前半段卷积节点）。
+  - 训练参数：同 `tune4`（`lr0=4e-5, lrf=0.2, fq@7, obs_off@9`）。
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38640`（epoch3）
+    - `last mAP50-95(B)=0.37665`（epoch10）
+  - 结论：与 `tune4`/`tune10` 一致，未突破 `0.391`；fake-quant 后仍明显回落。

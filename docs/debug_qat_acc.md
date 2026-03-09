@@ -146,10 +146,10 @@
 - `debug_qat_train2017_tune10_headfp32_e10`（observer策略：检测头FP32）
   - 改动：`config.json` 采用区域配置，将检测头对应 conv 节点（`conv2d_63~conv2d_86`）设为 `FP32`，其余层保持全局QAT配置。
   - 训练参数：沿用 `tune4`（`lr0=4e-5, lrf=0.2, fq@7, obs_off@9`）。
-  - 当前进度：运行中；已完成
-    - epoch1: `mAP50-95=0.38249`
-    - epoch2: `mAP50-95=0.38464`
-  - 阶段结论：与 `tune4` 前两轮基本一致；需等待 fake-quant 开启后的 epoch8~10 判断该 observer 策略是否带来提升。
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38640`（epoch3）
+    - `last mAP50-95(B)=0.37609`（epoch10）
+  - 结论：检测头保持 FP32 未带来提升，fake-quant 阶段仍出现后段回落。
 
 - `debug_qat_train2017_tune11_neckheadfp32_e10`（observer策略：Neck+Head大范围FP32）
   - 改动：`config.json` 将 `conv2d_40~conv2d_86` 设置为 `FP32`（只量化前半段卷积节点）。
@@ -158,3 +158,48 @@
     - `best mAP50-95(B)=0.38640`（epoch3）
     - `last mAP50-95(B)=0.37665`（epoch10）
   - 结论：与 `tune4`/`tune10` 一致，未突破 `0.391`；fake-quant 后仍明显回落。
+
+- `debug_qat_train2017_tune12_lr8e5_e10`（参数策略：提高学习率）
+  - 改动：量化配置恢复默认非对称（asym），仅将 `lr0` 提升到 `8e-5`。
+  - 训练参数：其余同 `tune4`（`lrf=0.2, fq@7, obs_off@9`）。
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38460`（epoch3）
+    - `last mAP50-95(B)=0.37393`（epoch10）
+  - 结论：学习率提升未改善上限，且后段回落更明显。
+
+- `debug_qat_train2017_tune13_frombest_fq9_e10`（参数策略：从best继续 + fake-quant延后）
+  - 改动：
+    - 初始化权重改为 `runs/detect/debug_qat_train2017_tune4_e10/weights/best.pt`
+    - `lr0=3e-5`
+    - `qat_enable_fake_quant_epoch=9`, `qat_disable_observer_epoch=9`
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38627`（epoch6）
+    - `last mAP50-95(B)=0.37640`（epoch10）
+  - 结论：延后 fake-quant 可减轻后段劣化，但上限仍未超过 `0.3864`。
+
+- `debug_qat_train2017_tune14_frombest_lr8e5_fq9_e10`（参数策略：从best继续 + 更高lr + fake-quant延后）
+  - 改动：
+    - 初始化权重：`runs/detect/debug_qat_train2017_tune4_e10/weights/best.pt`
+    - `lr0=8e-5`
+    - `qat_enable_fake_quant_epoch=9`, `qat_disable_observer_epoch=9`
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38460`（epoch3）
+    - `last mAP50-95(B)=0.37424`（epoch10）
+  - 结论：更高学习率未带来收益，仍低于 `0.3864` 基线。
+
+- `debug_qat_train2017_tune15_frombest_fq10_e10`（参数策略：从best继续 + fake-quant进一步延后）
+  - 改动：
+    - 初始化权重：`runs/detect/debug_qat_train2017_tune4_e10/weights/best.pt`
+    - `lr0=3e-5`
+    - `qat_enable_fake_quant_epoch=10`, `qat_disable_observer_epoch=10`
+  - 10-epoch结果：
+    - `best mAP50-95(B)=0.38627`（epoch6）
+    - `last mAP50-95(B)=0.38582`（epoch10）
+  - 结论：后段回落明显减轻，但峰值仍未超过 `0.3864` 基线，距目标 `0.391` 仍有差距。
+
+- `debug_qat_train2017_tune16_frombest_fq9_obs10_lr2e5_e10`（参数策略：从best继续 + 最后1轮FQ + observer全程开启 + 更低lr）
+  - 改动：
+    - 初始化权重：`runs/detect/debug_qat_train2017_tune4_e10/weights/best.pt`
+    - `lr0=2e-5`, `lrf=0.2`
+    - `qat_enable_fake_quant_epoch=9`, `qat_disable_observer_epoch=10`, `qat_disable_fake_quant_epoch=-1`
+  - 状态：训练中（10 epoch，`device=[3]`）。

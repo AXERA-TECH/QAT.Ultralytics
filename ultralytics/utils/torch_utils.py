@@ -680,6 +680,11 @@ class ModelEMA:
             d = self.decay(self.updates)
 
             msd = de_parallel(model).state_dict()  # model state_dict
+            # for k, v in self.ema.state_dict().items():
+            #     if v.dtype.is_floating_point:  # true for FP16 and FP32
+            #         v *= d
+            #         v += (1 - d) * msd[k].detach()
+            #         # assert v.dtype == msd[k].dtype == torch.float32, f'{k}: EMA {v.dtype},  model {msd[k].dtype}'
             for k, v in self.ema.state_dict().items():
                 mv = msd.get(k, None)
                 if mv is None or mv.shape != v.shape:

@@ -25,13 +25,13 @@ import ultralytics.utils.quantized_decomposed_dequantize_per_channel
 import torch
 
 #---Load a model---
-model = YOLO("yolo11s.yaml")
+model = YOLO("yolo11n.yaml")
 
 #---export config---
 qat_onnx_imgsz = [640, 640] # 推理模型输入大小
 device = 'cuda'             # 
 qat_onnx_sp = './qat.onnx'  # 保存路径，最终会导出qat_slim.onnx
-qat_weights = 'runs/detect/train3/weights/epoch1.pt'    # qat权重
+qat_weights = 'runs/detect/train5/weights/best.pt'    # qat权重
 qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
 
 #---quantizer config---
@@ -45,14 +45,15 @@ float_model = model.model.to(device)
 inputs = torch.rand(1, 3, *qat_onnx_imgsz).to(device)
 dynamic_shapes = None
 print('start export!')
-exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module()
+exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes, strict=False)
 print('export training model done!')
-
+exported_module = exported_model.module()
+# torch.ao.quantization.move_exported_model_to_eval(exported_module)
 #---export quantized model---
-prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+prepared_model = prepare_qat_pt2e(exported_module, quantizer)
 print('prepared model done!') 
-torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+# torch.ao.quantization.move_exported_model_to_eval(prepared_model)
+# torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
 # print(f'prepared_model {prepared_model}')
 
 #---load and save qat weights---
@@ -63,6 +64,7 @@ print('load_state_dict done!')
 
 #---export quantized model to onnx---
 quantized_model = convert_pt2e(prepared_model)
+
 print('convert_pt2e done!')
 onnx_program = torch.onnx.export(quantized_model, (inputs.to(device),), dynamo=True, opset_version=21)
 onnx_program.optimize()

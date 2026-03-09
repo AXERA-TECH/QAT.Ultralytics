@@ -1,15 +1,15 @@
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("yolo11s.yaml")
-# model = YOLO("yolo11s.pt")  # load an official model
+model = YOLO("yolo11n.yaml")
+model.load("yolo11n.pt")  # build from YAML and transfer weights
 
 # Validate the model
 metrics = model.val(data="coco.yaml",   # 数据集
                     batch=16,   #
-                    qat_pt_path='./last_checkpoint.pth',    # 评估qat模型路径
-                    qat_onnx_sp='./last_checkpoint.onnx',   # 导出Onnx模型，并导出{last_checkpoint}_qat_slim.onnx
-                    qat_onnx_imgsz=[640, 640],              # 导出Onnx模型的shape, [h, w]
+                    qat_pt_path='runs/qat_test/best_qat/weights/best.pt',   # 评估qat模型路径
+                    qat_onnx_imgsz=[640, 640],                              # Onnx模型的shape, [h, w]
+                    device=2,   # 评估设备
                     )  # no arguments needed, dataset and settings remembered 
 metrics.box.map  # map50-95
 metrics.box.map50  # map50

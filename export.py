@@ -31,7 +31,7 @@ model = YOLO("yolo11n.yaml")
 qat_onnx_imgsz = [640, 640] # 推理模型输入大小
 device = 'cuda'             # 
 qat_onnx_sp = './qat.onnx'  # 保存路径，最终会导出qat_slim.onnx
-qat_weights = 'runs/detect/train5/weights/best.pt'    # qat权重
+qat_weights = 'runs/qat_test/best_qat/weights/best.pt'    # qat权重
 qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
 
 #---quantizer config---
@@ -45,7 +45,7 @@ float_model = model.model.to(device)
 inputs = torch.rand(1, 3, *qat_onnx_imgsz).to(device)
 dynamic_shapes = None
 print('start export!')
-exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes, strict=False)
+exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes)
 print('export training model done!')
 exported_module = exported_model.module()
 # torch.ao.quantization.move_exported_model_to_eval(exported_module)

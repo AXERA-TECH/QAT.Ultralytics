@@ -32,5 +32,6 @@ model.train(
     qat_onnx_sp='./runs/qat_test/best_qat/exp_train2017_best_03864.onnx',
     project='runs/qat_test',
     name='best_qat',
-    exist_ok=True,
+    exist_ok=False,
+    save_period=1,
 )

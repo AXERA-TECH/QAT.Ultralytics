@@ -870,7 +870,7 @@ class Model(torch.nn.Module):
         quantizer.set_global(global_config)
         quantizer.set_regional(regional_configs)
         self.model = self.model.to(self.device)
-        inputs = torch.rand(1, 3, inp_h, inp_w).to(self.device)
+        inputs = torch.rand(2, 3, inp_h, inp_w).to(self.device)
         dynamic_shapes = {
             "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
         }

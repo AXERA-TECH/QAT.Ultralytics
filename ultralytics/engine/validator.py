@@ -249,8 +249,8 @@ class BaseValidator:
             torch.ao.quantization.allow_exported_model_train_eval(quantized_model)
             quantized_model.eval()
             quantized_model.to(self.device)
-            print(f'self.args {self.args}')
-            exit()
+            # print(f'self.args {self.args}')
+
             if str(self.args.model).endswith(".yaml") and model is None:
                 LOGGER.warning("WARNING ⚠️ validating an untrained model YAML will result in 0 mAP.")
             callbacks.add_integration_callbacks(self)

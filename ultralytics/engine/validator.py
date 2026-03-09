@@ -135,6 +135,53 @@ class BaseValidator:
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
 
+    @staticmethod
+    def _resolve_device(device, batch=1):
+        """Resolve user input to a concrete torch.device without remapping to cuda:0."""
+        if isinstance(device, torch.device):
+            return device
+
+        if isinstance(device, (list, tuple)):
+            if not device:
+                device = 0 if torch.cuda.is_available() else "cpu"
+            else:
+                device = device[0]
+
+        if device is None:
+            device = 0 if torch.cuda.is_available() else "cpu"
+
+        if isinstance(device, int):
+            if device < 0:
+                return torch.device("cpu")
+            if not torch.cuda.is_available():
+                raise ValueError(f"device={device} requires CUDA, but CUDA is not available.")
+            return torch.device(f"cuda:{device}")
+
+        device_str = str(device).strip().lower()
+        if device_str in {"cpu", "mps"}:
+            return torch.device(device_str)
+        if device_str.startswith("cuda:"):
+            if not torch.cuda.is_available():
+                raise ValueError(f"device={device} requires CUDA, but CUDA is not available.")
+            return torch.device(device_str)
+        if device_str.isdigit():
+            if not torch.cuda.is_available():
+                raise ValueError(f"device={device} requires CUDA, but CUDA is not available.")
+            return torch.device(f"cuda:{device_str}")
+        if "," in device_str:
+            first = device_str.split(",")[0].strip()
+            if first.isdigit():
+                if not torch.cuda.is_available():
+                    raise ValueError(f"device={device} requires CUDA, but CUDA is not available.")
+                return torch.device(f"cuda:{first}")
+            if first.startswith("cuda:"):
+                if not torch.cuda.is_available():
+                    raise ValueError(f"device={device} requires CUDA, but CUDA is not available.")
+                return torch.device(first)
+
+        # Fallback for uncommon formats.
+        return select_device(device, batch=batch, verbose=False)
+
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
         """
@@ -175,6 +222,7 @@ class BaseValidator:
             from ultralytics.nn.tasks import DetectionModel
             from ultralytics.utils import LOGGER, RANK
             from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
+            self.device = self._resolve_device(self.args.get("device", 0), batch=self.args.batch)
             float_model = DetectionModel(model.yaml, nc=model.yaml['nc'], verbose=True and RANK == -1)
             float_model.load(model)
             # quantizer
@@ -187,31 +235,36 @@ class BaseValidator:
             inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
 
             inputs = torch.rand(2, 3, inp_h, inp_w).to(self.device)
-            print(f'export onnx input shape: {inputs.shape}')
+            print(f'export input shape: {inputs.shape}')
             dynamic_shapes = {
                 "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
             }
             exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
             prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-            prepared_model.load_state_dict(torch.load(self.args.qat_pt_path))
+            prepared_model.to(self.device)
+            prepared_model.load_state_dict(torch.load(self.args.qat_pt_path, map_location=self.device)['qat_model'])
             # export quantized model
             quantized_model = convert_pt2e(prepared_model)
             torch.ao.quantization.move_exported_model_to_eval(quantized_model)
             torch.ao.quantization.allow_exported_model_train_eval(quantized_model)
             quantized_model.eval()
-
+            quantized_model.to(self.device)
+            print(f'self.args {self.args}')
+            exit()
             if str(self.args.model).endswith(".yaml") and model is None:
                 LOGGER.warning("WARNING ⚠️ validating an untrained model YAML will result in 0 mAP.")
             callbacks.add_integration_callbacks(self)
             model = AutoBackend(
                 weights=model or self.args.model,
-                device=select_device(self.args.device, self.args.batch),
+                # device=select_device(self.args.device, self.args.batch),
+                device=self.device,
                 dnn=self.args.dnn,
                 data=self.args.data,
                 fp16=self.args.half,
             )
             # self.model = model
             self.device = model.device  # update device
+            quantized_model.to(self.device)  # 
             self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             imgsz = check_imgsz(self.args.imgsz, stride=stride)
@@ -220,7 +273,8 @@ class BaseValidator:
             elif not pt and not jit:
                 self.args.batch = model.metadata.get("batch", 1)  # export.py models default to batch-size 1
                 LOGGER.info(f"Setting batch={self.args.batch} input of shape ({self.args.batch}, 3, {imgsz}, {imgsz})")
-
+            
+            print(f'autobackend self.device {self.device}')
             if str(self.args.data).split(".")[-1] in {"yaml", "yml"}:
                 self.data = check_det_dataset(self.args.data)
             elif self.args.task == "classify":

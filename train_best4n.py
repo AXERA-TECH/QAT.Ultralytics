@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-# Best-known 10-epoch QAT baseline on coco_train2017.yaml
+# Best-known 10-epoch QAT baseline on ultralytics/cfg/datasets/coco.yaml
 model = YOLO('yolo11n.yaml')
 model.load('yolo11n.pt')
 

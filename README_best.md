@@ -21,13 +21,13 @@ pip install -e .
 
 ## 2. 数据集准备
 
-确保 `coco_train2017.yaml` 中的数据集路径配置正确，并且可以正常访问 `train2017/val2017` 与标注文件。
+确保 `ultralytics/cfg/datasets/coco.yaml` 中的数据集路径配置正确，并且可以正常访问 `train2017/val2017` 与标注文件。
 
 ## 3. 单 GPU 训练（基线）
 
 ```bash
 yolo detect train \
-  model=yolo11n.yaml data=coco_train2017.yaml pretrained=yolo11n.pt \
+  model=yolo11n.yaml data=ultralytics/cfg/datasets/coco.yaml pretrained=yolo11n.pt \
   epochs=10 batch=64 imgsz=640 optimizer=SGD lr0=4e-5 lrf=0.2 \
   qat_enable_fake_quant_epoch=7 qat_disable_observer_epoch=9 qat_disable_fake_quant_epoch=-1 \
   qat_onnx_sp=./debug/exp_train2017_tune4.onnx qat_onnx_imgsz=[640,640] \
@@ -42,7 +42,7 @@ yolo detect train \
 ```bash
 PYTHONPATH=/your_project_path/QAT.Ultralytics:$PYTHONPATH \
 yolo detect train \
-  model=yolo11n.yaml data=coco_train2017.yaml pretrained=yolo11n.pt \
+  model=yolo11n.yaml data=ultralytics/cfg/datasets/coco.yaml pretrained=yolo11n.pt \
   epochs=10 batch=64 imgsz=640 optimizer=SGD lr0=4e-5 lrf=0.2 \
   qat_enable_fake_quant_epoch=7 qat_disable_observer_epoch=9 qat_disable_fake_quant_epoch=-1 \
   qat_onnx_sp=./debug/exp_train2017_multigpu_tune4_fixpy.onnx qat_onnx_imgsz=[640,640] \

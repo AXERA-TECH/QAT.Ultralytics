@@ -1,7 +1,7 @@
 # Best-known train2017 QAT baseline (mAP50-95=0.38640)
 model: yolo11n.yaml
 weights: yolo11n.pt
-data: coco_train2017.yaml
+data: ultralytics/cfg/datasets/coco.yaml
 batch: 64
 epochs: 10
 imgsz: 640

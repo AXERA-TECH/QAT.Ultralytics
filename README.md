@@ -11,12 +11,7 @@
 
 ```
 pip install -r requirements.txt
-```
-
-安装额外库
-
-```
-pip install e . # ultralytics
+pip install e . # for ultralytics
 ```
 
 我们发现 `onnxruntime` 和 `onnxscript` 的其他版本可能引起精度误差和导出错误，因此**pytorch\==2.6; onnxruntime\==1.21.0 onnxscript\==0.4.0** 是必须的。

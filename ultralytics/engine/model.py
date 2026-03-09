@@ -828,7 +828,7 @@ class Model(torch.nn.Module):
 
         self.max_stride = int(self.model.stride.max())
 
-        # export onnx
+        # export float onnx
         import onnx
         from onnxsim import simplify
 
@@ -869,15 +869,24 @@ class Model(torch.nn.Module):
         quantizer = AXQuantizer()
         quantizer.set_global(global_config)
         quantizer.set_regional(regional_configs)
-        self.model = self.model.to("cpu")
-        inputs = torch.rand(1, 3, inp_h, inp_w).to("cpu")
+        self.model = self.model.to(self.device)
+        inputs = torch.rand(1, 3, inp_h, inp_w).to(self.device)
         dynamic_shapes = {
             "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
         }
-        exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
-        prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-        # torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-        # torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+        exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes) 
+        torch.ao.quantization.allow_exported_model_train_eval(exported_model)
+        # self.trainer.loss_items = torch.zeros(3).to(self.device)
+        # self.trainer._setup_train(1)
+        # self.trainer.epoch = 0
+        # print('float model acc!')# 0.391
+        # self.trainer.qat_model = exported_model.module().to(device)
+        # metrics = self.trainer.validator(self.trainer)
+
+        exported_module = exported_model.module()
+        prepared_model = prepare_qat_pt2e(exported_module, quantizer)
+        torch.ao.quantization.move_exported_model_to_eval(prepared_model)
+        torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
 
         self.trainer.qat_model = prepared_model.to(device)
         self.model = self.model.to(device)
@@ -890,22 +899,6 @@ class Model(torch.nn.Module):
             self.model, self.ckpt = attempt_load_one_weight(ckpt)
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
-            torch.save(self.trainer.qat_model.state_dict(), f"{path_parent}/{file_name}.pth")
-            import copy
-            prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
-            quantized_model = convert_pt2e(prepared_model_copy)
-            onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
-            onnx_program.optimize()
-            onnx_program.save(f"{path_parent}/{file_name}_qat.onnx")
-
-            from onnxslim import slim
-            import onnx
-
-            model = onnx.load(f"{path_parent}/{file_name}_qat.onnx")
-            model_simp = slim(model)
-            sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
-            onnx.save(model_simp, sim_path)
-            print(f"save onnx model to [{sim_path}] Successfully!")
 
         return self.metrics
 

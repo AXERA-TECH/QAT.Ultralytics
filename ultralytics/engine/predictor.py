@@ -51,7 +51,7 @@ from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import select_device, smart_inference_mode
 
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 
@@ -342,7 +342,7 @@ class BasePredictor:
                     float_model = DetectionModel(self.model.model.yaml, nc=80, verbose=True and RANK == -1)
                     float_model.load(self.model.model)
                     # quantizer
-                    global_config, regional_configs = load_config("./config.json")
+                    global_config, regional_configs = ax_load_config("./config.json")
                     quantizer = AXQuantizer()
                     quantizer.set_global(global_config) 
                     quantizer.set_regional(regional_configs)

@@ -42,7 +42,7 @@ from torch.ao.quantization.quantize_pt2e import (
 #     get_quantization_config,
 # )
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 from ultralytics.utils.train_utils import (
@@ -883,7 +883,7 @@ class Model(torch.nn.Module):
 
         # quantizer
         config_path = "./config.json"
-        global_config, regional_configs = load_config(config_path)
+        global_config, regional_configs = ax_load_config(config_path)
         quantizer = AXQuantizer()
         quantizer.set_global(global_config)
         quantizer.set_regional(regional_configs)

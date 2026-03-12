@@ -24,6 +24,7 @@ Usage - formats:
 """
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -36,13 +37,14 @@ import torch
 from ultralytics.cfg import get_cfg, get_save_dir
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
 from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.nn.modules.head import Detect, Segment
 from ultralytics.utils import LOGGER, TQDM, callbacks, colorstr, emojis
 from ultralytics.utils.checks import check_imgsz
 from ultralytics.utils.ops import Profile
 from ultralytics.utils.torch_utils import de_parallel, select_device, smart_inference_mode
 
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 
@@ -182,6 +184,11 @@ class BaseValidator:
         # Fallback for uncommon formats.
         return select_device(device, batch=batch, verbose=False)
 
+    @staticmethod
+    def _load_qat_checkpoint(ckpt_path, device):
+        """Load a QAT checkpoint once to avoid repeated large deserialization."""
+        return torch.load(ckpt_path, map_location=device, weights_only=False)
+
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
         """
@@ -216,8 +223,7 @@ class BaseValidator:
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
-            if qat_model is not None:
-                qat_model.eval()
+            qat_model.eval()
         else:
             from ultralytics.nn.tasks import DetectionModel
             from ultralytics.utils import LOGGER, RANK
@@ -226,7 +232,7 @@ class BaseValidator:
             float_model = DetectionModel(model.yaml, nc=model.yaml['nc'], verbose=True and RANK == -1)
             float_model.load(model)
             # quantizer
-            global_config, regional_configs = load_config("./config.json")
+            global_config, regional_configs = ax_load_config("./config.json")
             quantizer = AXQuantizer()
             quantizer.set_global(global_config) 
             quantizer.set_regional(regional_configs)
@@ -242,13 +248,15 @@ class BaseValidator:
             exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
             prepared_model = prepare_qat_pt2e(exported_model, quantizer)
             prepared_model.to(self.device)
-            prepared_model.load_state_dict(torch.load(self.args.qat_pt_path, map_location=self.device)['qat_model'])
-            # export quantized model
-            quantized_model = convert_pt2e(prepared_model)
-            torch.ao.quantization.move_exported_model_to_eval(quantized_model)
-            torch.ao.quantization.allow_exported_model_train_eval(quantized_model)
-            quantized_model.eval()
-            quantized_model.to(self.device)
+
+            ckpt = self._load_qat_checkpoint(self.args.qat_pt_path, self.device)
+            prepared_model.load_state_dict(ckpt["qat_model"])
+            qat_model = convert_pt2e(prepared_model)
+            torch.ao.quantization.move_exported_model_to_eval(qat_model)
+            torch.ao.quantization.allow_exported_model_train_eval(qat_model)
+            qat_model.eval()
+            qat_model.to(self.device)
+ 
             # print(f'self.args {self.args}')
 
             if str(self.args.model).endswith(".yaml") and model is None:
@@ -264,7 +272,6 @@ class BaseValidator:
             )
             # self.model = model
             self.device = model.device  # update device
-            quantized_model.to(self.device)  # 
             self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
             imgsz = check_imgsz(self.args.imgsz, stride=stride)
@@ -307,29 +314,43 @@ class BaseValidator:
             # Preprocess
             with dt[0]:
                 batch = self.preprocess(batch)
-            
+
             # Inference
             with dt[1]:
-                if self.training and qat_model is not None:
-                    qat_preds = qat_model(batch['img'])
-                    det_id = list(model.model._modules.keys())[-1]
-                    if isinstance(qat_preds, dict):
-                        qat_preds_infer = model.model._modules.get(det_id)._inference(qat_preds['one2one'])
-                        qat_preds_infer = model.model._modules.get(det_id).postprocess(qat_preds_infer.permute(0, 2, 1), 300, 80)
-                    else:
-                        qat_preds_infer = model.model._modules.get(det_id)._inference(qat_preds)
-                    preds = (qat_preds_infer, qat_preds)
-                elif self.training:
+                if qat_model is None:
                     preds = model(batch["img"])
                 else:
-                    qat_preds = quantized_model(batch['img'])
-                    det_id = list(model.model.model._modules.keys())[-1]
-                    if isinstance(qat_preds, dict):
-                        qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds['one2one'])
-                        qat_preds_infer = model.model.model._modules.get(det_id).postprocess(qat_preds_infer.permute(0, 2, 1), 300, 80)
+                    qat_model.eval()
+                    qat_preds = qat_model(batch['img'])
+
+                    if isinstance(det_head, Segment):
+                        backbone_out = qat_preds[0]
+                    elif isinstance(det_head, Detect):
+                        backbone_out = qat_preds
+
+                    if self.training:
+                        det_id = list(model.model._modules.keys())[-1]
+                        det_head = model.model._modules.get(det_id)
                     else:
-                        qat_preds_infer = model.model.model._modules.get(det_id)._inference(qat_preds)
-                    preds = (qat_preds_infer, qat_preds)
+                        # 默认加载EMA Model
+                        det_id = list(model.model.model._modules.keys())[-1]
+                        det_head = model.model.model._modules.get(det_id)
+
+                    if isinstance(backbone_out, dict):
+                        max_det = getattr(self.args, "max_det", 300)
+                        nc = getattr(det_head, "nc", self.data.get("nc", 80) if hasattr(self, "data") else 80)
+                        qat_preds_infer = det_head._inference(backbone_out['one2one'])
+                        qat_preds_infer = det_head.postprocess(qat_preds_infer.permute(0, 2, 1), max_det, nc)
+                    else:
+                        qat_preds_infer = det_head._inference(backbone_out)
+
+                    if isinstance(det_head, Segment):
+                        x = (qat_preds_infer, backbone_out)
+                        mc = qat_preds[1]
+                        p = qat_preds[2]
+                        preds = (torch.cat([x[0], mc], 1), (x[1], mc, p))
+                    elif isinstance(det_head, Detect):
+                        preds = (qat_preds_infer, qat_preds)
 
             # Loss
             with dt[2]:

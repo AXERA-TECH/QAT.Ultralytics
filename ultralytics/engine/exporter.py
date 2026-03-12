@@ -1302,13 +1302,13 @@ class Exporter:
         print(type(self.model))
         # f = str(self.file.with_suffix("_qat_slim.onnx"))
         from ultralytics.utils.ax_quantizer import(
-            load_config,
+            ax_load_config,
             AXQuantizer,
         )
         from onnxslim import slim
         from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
         # quantizer
-        global_config, regional_configs = load_config("./config.json")
+        global_config, regional_configs = ax_load_config("./config.json")
         quantizer = AXQuantizer()
         quantizer.set_global(global_config) 
         quantizer.set_regional(regional_configs)

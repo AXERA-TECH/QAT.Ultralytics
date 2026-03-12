@@ -8,9 +8,6 @@ mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmar
 qat_pt_path: "./last_checkpoint.pth" # (str) qat模型的权重
 qat_onnx_sp: "./last_checkpoint.onnx" # (str) qat模型转onnx保存路径
 qat_onnx_imgsz: [640, 640]
-qat_enable_fake_quant_epoch: 0 # (int) epoch to enable fake quantization in QAT
-qat_disable_observer_epoch: -1 # (int) epoch to freeze observer stats in QAT (-1 to keep enabled)
-qat_disable_fake_quant_epoch: -1 # (int) epoch to disable fake quantization in QAT (-1 to keep enabled)
 
 # Train settings -------------------------------------------------------------------------------------------------------
 model: # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml

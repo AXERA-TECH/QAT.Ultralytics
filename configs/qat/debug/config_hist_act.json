@@ -1,6 +1,8 @@
 {
     "global_config": {
         "is_symmetric": false,
+        "act_observer": "histogram",
+        "weight_observer": "moving_avg_per_channel",
         "input": {
             "dtype": "U8",
             "qmin": 0,

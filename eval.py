@@ -5,12 +5,12 @@ model = YOLO("yolo11n.yaml")
 model.load("yolo11n.pt")  # build from YAML and transfer weights
 
 # Validate the model
-metrics = model.val(data="coco.yaml",   # 数据集
-                    batch=32,   #
-                    qat_pt_path='runs/qat_test/best_qat/weights/epoch7.pt',   # 评估qat模型路径
-                    qat_onnx_imgsz=[640, 640],                              # Onnx模型的shape, [h, w]
-                    device=2,   # 评估设备
-                    )  # no arguments needed, dataset and settings remembered 
+metrics = model.val(data="ultralytics/cfg/datasets/coco.yaml",  # 数据集
+                    batch=32,
+                    qat_pt_path="./runs/detect/debug_qat_train2017_tune27_sppf_fix_stagedfq_w6_a8_obs9_e10/weights/epoch8.pt",  # 评估qat模型路径
+                    qat_onnx_imgsz=[640, 640],  # Onnx模型的shape, [h, w]
+                    device=2,
+                    )
 metrics.box.map  # map50-95
 metrics.box.map50  # map50
 metrics.box.map75  # map75

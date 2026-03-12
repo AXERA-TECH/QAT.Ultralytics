@@ -15,7 +15,7 @@ from torch.ao.quantization.quantize_pt2e import (
 )
 
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 
@@ -28,21 +28,21 @@ import torch
 model = YOLO("yolo11n.yaml")
 
 #---export config---
-qat_onnx_imgsz = [640, 640] # 推理模型输入大小
+qat_onnx_imgsz = [1, 3, 640, 640] # 推理模型输入大小
 device = 'cuda'             # 
-qat_onnx_sp = './qat.onnx'  # 保存路径，最终会导出qat_slim.onnx
-qat_weights = 'runs/qat_test/best_qat/weights/best.pt'    # qat权重
-qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
+qat_onnx_sp = './qat-pool.onnx'  # 保存路径，最终会导出qat_slim.onnx
+qat_weights = 'runs/detect/debug_qat_train2017_tune28_sppf_fix_stagedfq_w6_a10_obs11_e12/weights/last.pt'    # qat权重
+qat_weight_dict_sp = './qat-pool.pth' # 保存qat权重路径 
 
 #---quantizer config---
-global_config, regional_configs = load_config("./config.json")
+global_config, regional_configs = ax_load_config("./config.json")
 quantizer = AXQuantizer()
 quantizer.set_global(global_config)
 quantizer.set_regional(regional_configs)
 
 #---export training model---
 float_model = model.model.to(device)
-inputs = torch.rand(1, 3, *qat_onnx_imgsz).to(device)
+inputs = torch.rand(*qat_onnx_imgsz).to(device)
 dynamic_shapes = None
 print('start export!')
 exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes)

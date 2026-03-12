@@ -285,7 +285,7 @@ def load_regional_config(regional_config: Dict[str, str], is_qat: bool = True):
     return regional_quantization_config
 
 
-def load_config(config_file: str, is_qat: bool = True):
+def ax_load_config(config_file: str, is_qat: bool = True):
 
     with open(config_file, 'r') as f:
         config = json.load(f)

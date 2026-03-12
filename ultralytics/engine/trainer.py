@@ -60,6 +60,11 @@ from torch.ao.quantization._learnable_fake_quantize import _LearnableFakeQuantiz
 
 from torch.ao.quantization import HistogramObserver,FakeQuantizeBase,_DerivedObserverOrFakeQuantize,disable_fake_quant, enable_fake_quant, disable_observer, enable_observer
 
+_WEIGHT_FQ_DTYPES = {torch.int8, getattr(torch, "qint8", None)}
+_ACT_FQ_DTYPES = {torch.uint8, getattr(torch, "quint8", None)}
+_WEIGHT_FQ_QSCHEMES = {torch.per_channel_symmetric, torch.per_channel_affine}
+_ACT_FQ_QSCHEMES = {torch.per_tensor_affine, torch.per_tensor_symmetric}
+
 def enable_learn(mod):
     """Enable observation for this module.
 
@@ -83,6 +88,34 @@ def disable_learn(mod):
     """
     if isinstance(mod, _LearnableFakeQuantize):
         mod.toggle_qparam_learning(False)
+
+
+def _get_fake_quant_attr(mod, attr):
+    """Return fake-quant attribute from the module itself or its observer."""
+    if hasattr(mod, attr):
+        return getattr(mod, attr)
+    observer = getattr(mod, "activation_post_process", None)
+    if observer is not None and hasattr(observer, attr):
+        return getattr(observer, attr)
+    return None
+
+
+def _get_fake_quant_kind(mod):
+    """Classify PT2E fake-quant modules into weight, activation or generic buckets."""
+    if not (isinstance(mod, FakeQuantizeBase) or _is_fake_quant_script_module(mod)):
+        return None
+
+    dtype = _get_fake_quant_attr(mod, "dtype")
+    qscheme = _get_fake_quant_attr(mod, "qscheme")
+    ch_axis = _get_fake_quant_attr(mod, "ch_axis")
+
+    if dtype in _WEIGHT_FQ_DTYPES or qscheme in _WEIGHT_FQ_QSCHEMES:
+        return "weight"
+    if dtype in _ACT_FQ_DTYPES:
+        return "activation"
+    if qscheme in _ACT_FQ_QSCHEMES and ch_axis is None:
+        return "activation"
+    return "generic"
 
 class BaseTrainer:
     """
@@ -165,6 +198,10 @@ class BaseTrainer:
             self.trainset, self.testset = self.get_dataset()
         self.ema = None
         self.qat_model = None
+        self._qat_schedule_state = None
+        self._qat_fake_quant_summary = None
+        self._qat_metric_threshold_reached = False
+        self._qat_metric_threshold_value = None
 
         # Optimization utils init
         self.lf = None
@@ -334,14 +371,6 @@ class BaseTrainer:
         self.accumulate = max(round(self.args.nbs / self.batch_size), 1)  # accumulate loss before optimizing
         weight_decay = self.args.weight_decay * self.batch_size * self.accumulate / self.args.nbs  # scale weight_decay
         iterations = math.ceil(len(self.train_loader.dataset) / max(self.batch_size, self.args.nbs)) * self.epochs
-        # self.optimizer = self.build_optimizer(
-        #     model=self.model,
-        #     name=self.args.optimizer,
-        #     lr=self.args.lr0,
-        #     momentum=self.args.momentum,
-        #     decay=weight_decay,
-        #     iterations=iterations,
-        # )
 
         if self.qat_model is not None:
             print('use qat optimizer!')
@@ -394,10 +423,13 @@ class BaseTrainer:
             self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
         epoch = self.start_epoch
         self.optimizer.zero_grad()  # zero any resumed gradients to ensure stability on train start
-        if self.qat_model is not None:
-            self.qat_model.train()
+
+        self.qat_model.train()
+        # loss function
+        if str(type(self.model)).find('DistributedDataParallel') != -1:
+            criterion = self.model.module.init_criterion()
         else:
-            self._model_train()
+            criterion = self.model.init_criterion()
         while True:
             self.epoch = epoch
             self.run_callbacks("on_train_epoch_start")
@@ -405,10 +437,6 @@ class BaseTrainer:
                 warnings.simplefilter("ignore")  # suppress 'Detected lr_scheduler.step() before optimizer.step()'
                 self.scheduler.step()
 
-            if self.qat_model is not None:
-                self._configure_qat_epoch(epoch)
-            else:
-                self._model_train()
             if RANK != -1:
                 self.train_loader.sampler.set_epoch(epoch)
             pbar = enumerate(self.train_loader)
@@ -441,18 +469,10 @@ class BaseTrainer:
                 # Forward
                 # with autocast(self.amp):
                 batch = self.preprocess_batch(batch)
-                # print(batch['img'].shape)
-                # print(type(str(type(self.model))))
-                if str(type(self.model)).find('DistributedDataParallel') != -1:
-                    criterion = self.model.module.init_criterion()
-                else:
-                    criterion = self.model.init_criterion()
-                if self.qat_model is not None:
-                    preds = self.qat_model(batch['img'])
-                else:
-                    preds = self.model(batch['img'])
+
+                preds = self.qat_model(batch['img'])
+ 
                 loss, self.loss_items = criterion(preds, batch)
-                # loss, self.loss_items = self.model(batch)
                 self.loss = loss.sum()
                 if RANK != -1:
                     self.loss *= world_size
@@ -671,7 +691,7 @@ class BaseTrainer:
         Returns:
             (dict): Optional checkpoint to resume training from.
         """
-        if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed
+        if isinstance(self.model, torch.nn.Module) and self.qat_model is not None:  # if model is loaded beforehand. No setup needed
             return
 
         cfg, weights = self.model, None
@@ -695,26 +715,29 @@ class BaseTrainer:
         if self.ema and self.qat_model is None:
             self.ema.update(model_for_optim)
 
-    def _configure_qat_epoch(self, epoch):
-        """Apply QAT observer/fake-quant schedule for the current epoch."""
-        if self.qat_model is None:
-            return
+    def _get_qat_trigger_metric(self):
+        """Return the validation metric used for fake-quant threshold triggering."""
+        if not isinstance(self.metrics, dict):
+            return None
+        metric = self.metrics.get("metrics/mAP50-95(B)")
+        return float(metric) if metric is not None else None
 
-        enable_fq_epoch = int(getattr(self.args, "qat_enable_fake_quant_epoch", 0))
-        disable_obs_epoch = int(getattr(self.args, "qat_disable_observer_epoch", -1))
-        disable_fq_epoch = int(getattr(self.args, "qat_disable_fake_quant_epoch", -1))
+    def _update_qat_metric_threshold_state(self):
+        """Latch the metric-threshold trigger once validation reaches the target."""
+        threshold = float(getattr(self.args, "qat_enable_fake_quant_metric_threshold", -1.0))
+        if threshold < 0 or self._qat_metric_threshold_reached:
+            return self._qat_metric_threshold_reached, self._qat_metric_threshold_value, threshold
 
-        self.qat_model.train()
-        if epoch < enable_fq_epoch:
-            self.qat_model.apply(disable_fake_quant)
-        else:
-            self.qat_model.apply(enable_fake_quant)
-        if disable_fq_epoch >= 0 and epoch >= disable_fq_epoch:
-            self.qat_model.apply(disable_fake_quant)
-        if disable_obs_epoch >= 0 and epoch >= disable_obs_epoch:
-            self.qat_model.apply(disable_observer)
-        else:
-            self.qat_model.apply(enable_observer)
+        metric = self._get_qat_trigger_metric()
+        if metric is not None and metric >= threshold:
+            self._qat_metric_threshold_reached = True
+            self._qat_metric_threshold_value = metric
+            LOGGER.info(
+                "QAT metric trigger reached: metrics/mAP50-95(B)=%.5f >= %.5f",
+                metric,
+                threshold,
+            )
+        return self._qat_metric_threshold_reached, self._qat_metric_threshold_value, threshold
 
     def preprocess_batch(self, batch):
         """Allows custom preprocessing model inputs and ground truths depending on task type."""

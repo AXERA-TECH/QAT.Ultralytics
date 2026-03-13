@@ -30,9 +30,9 @@ model = YOLO("yolo11n.yaml")
 #---export config---
 qat_onnx_imgsz = [1, 3, 640, 640] # 推理模型输入大小
 device = 'cuda'             # 
-qat_onnx_sp = './qat-pool.onnx'  # 保存路径，最终会导出qat_slim.onnx
-qat_weights = 'runs/detect/debug_qat_train2017_tune28_sppf_fix_stagedfq_w6_a10_obs11_e12/weights/last.pt'    # qat权重
-qat_weight_dict_sp = './qat-pool.pth' # 保存qat权重路径 
+qat_onnx_sp = './qat.onnx'  # 保存路径，最终会导出qat_slim.onnx
+qat_weights = 'runs/detect/qat2/weights/last.pt'    # qat权重
+qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
 
 #---quantizer config---
 global_config, regional_configs = ax_load_config("./config.json")
@@ -49,11 +49,12 @@ exported_model = torch.export.export_for_training(float_model, (inputs,), dynami
 print('export training model done!')
 exported_module = exported_model.module()
 # torch.ao.quantization.move_exported_model_to_eval(exported_module)
+
 #---export quantized model---
 prepared_model = prepare_qat_pt2e(exported_module, quantizer)
 print('prepared model done!') 
-# torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-# torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+torch.ao.quantization.move_exported_model_to_eval(prepared_model)
+torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
 # print(f'prepared_model {prepared_model}')
 
 #---load and save qat weights---
@@ -61,6 +62,7 @@ qat_weight_dict = torch.load(qat_weights)['qat_model']
 torch.save(qat_weight_dict, qat_weight_dict_sp)
 prepared_model.load_state_dict(qat_weight_dict)
 print('load_state_dict done!')
+prepared_model.eval()
 
 #---export quantized model to onnx---
 quantized_model = convert_pt2e(prepared_model)

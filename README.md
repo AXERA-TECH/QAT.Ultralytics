@@ -23,6 +23,7 @@
 安装依赖：
 
 ```bash
+cd QAT.Ultralytics
 pip install -r requirements.txt
 pip install -e .
 ```

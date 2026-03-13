@@ -1,6 +1,7 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
 import inspect
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -18,6 +19,7 @@ from ultralytics.utils import (
     DEFAULT_CFG_DICT,
     LOGGER,
     RANK,
+    LOCAL_RANK,
     SETTINGS,
     callbacks,
     checks,
@@ -26,7 +28,6 @@ from ultralytics.utils import (
 )
 
 import copy
-import torch
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
     get_symmetric_quantization_config,
@@ -41,7 +42,7 @@ from torch.ao.quantization.quantize_pt2e import (
 #     get_quantization_config,
 # )
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 from ultralytics.utils.train_utils import (
@@ -58,6 +59,10 @@ import ultralytics.utils.quantized_decomposed_dequantize_per_channel
 from torch.quantization.fake_quantize import FakeQuantizeBase, _is_fake_quant_script_module
 from torch.ao.quantization._learnable_fake_quantize import _LearnableFakeQuantize 
 from torch.ao.quantization import HistogramObserver,FakeQuantizeBase,_DerivedObserverOrFakeQuantize,disable_fake_quant, enable_fake_quant, disable_observer, enable_observer
+
+import onnx
+from onnxsim import simplify
+from onnxslim import slim
 
 
 class Model(torch.nn.Module):
@@ -755,7 +760,7 @@ class Model(torch.nn.Module):
         """
         self._check_is_pytorch_model()
         from .exporter import Exporter
-
+        print(f'self.model {self.model}')
         custom = {
             "imgsz": self.model.args["imgsz"],
             "batch": 1,
@@ -829,72 +834,132 @@ class Model(torch.nn.Module):
 
         self.max_stride = int(self.model.stride.max())
 
-        # export onnx
-        import torch
-        import onnx
-        from onnxsim import simplify
+        # # testing acc
+        # if self.task in ["segment"]:
+        #     self.trainer.loss_items = torch.zeros(4).to(device)
+        # else:
+        #     self.trainer.loss_items = torch.zeros(3).to(device)
+        # self.trainer._setup_train(1)
+        # self.trainer.epoch = 0
 
-        model_name = custom['model'][:-5]
-        inputs = torch.rand(1, 3, 640, 640).to("cuda")
-        self.model = self.model.to("cuda")
-        onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
-        onnx_program.optimize()
-        onnx_program.save("./{}_dynamo_float.onnx".format(model_name))
-        torch.onnx.export(
-            self.model,
-            inputs,
-            "./{}_float.onnx".format(model_name),
-            opset_version=18
-        )
-        onnx_model = onnx.load("./{}_float.onnx".format(model_name))
-        model_simp, check = simplify(onnx_model)
-        assert check, "Simplified ONNX model could not be validated"
-        onnx.save(model_simp, "./{}_float_sim.onnx".format(model_name))
+        # print('float model acc before quantization!')
+        # metrics = self.trainer.validator(self.trainer)
+
+
+        # export float onnx
+        inp_h, inp_w = kwargs.get('qat_onnx_imgsz', [640, 640])
+        qat_onnx_sp = kwargs.get('qat_onnx_sp', './last_checkpoint.onnx')
+        path_obj = Path(qat_onnx_sp)
+        path_parent = path_obj.parent
+        path_parent.mkdir(parents=True, exist_ok=True)
+        file_name = path_obj.stem
+        qat_onnx_sim_sp = f"{path_parent}/{file_name}_qat_slim.onnx"
+
+        # print(f'RANK {RANK}')
+        # print(f'LOCAL_RANK {LOCAL_RANK}')
+        if RANK >= 0:
+            device = f'cuda:{LOCAL_RANK}'
+        else:
+            device = torch.device("cuda")
+        # print(inputs.device)
+        # print(next(iter(self.model.state_dict().values())).device) 
+        # print(f'RANK {RANK}')
+        # print(f'LOCAL_RANK {LOCAL_RANK}')
+        self.model.to(device)
+        # print(f'device {device}')
+        # print(f'RANK {RANK}')
+        if RANK in [-1, 0]:
+            inputs = torch.rand(2, 3, inp_h, inp_w).to(device)
+            print(f'export onnx input shape: {inputs.shape}')
+            onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
+            onnx_program.optimize()
+            onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
+            torch.onnx.export(
+                self.model,
+                inputs,
+                f"{path_parent}/{file_name}_float.onnx",
+                opset_version=18
+            )
+            onnx_model = onnx.load(f"{path_parent}/{file_name}_float.onnx")
+            model_simp, check = simplify(onnx_model)
+            assert check, "Simplified ONNX model could not be validated"
+            onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
 
         # quantizer
-        global_config, regional_configs = load_config("./config.json")
+        config_path = "./config.json"
+        global_config, regional_configs = ax_load_config(config_path)
         quantizer = AXQuantizer()
         quantizer.set_global(global_config)
         quantizer.set_regional(regional_configs)
-        self.model = self.model.to("cpu")
-        inputs = torch.rand(1, 3, 640, 640).to("cpu")
+        self.model = self.model.to(self.device)
+        inputs = torch.rand(2, 3, inp_h, inp_w).to(self.device)
         dynamic_shapes = {
             "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
         }
-        exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
-        prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-        # torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-        # torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
 
-        self.trainer.qat_model = prepared_model.to("cuda")
-        self.model = self.model.to("cuda")
- 
+        # export model for training with dynamic shapes
+        exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes) 
+        # torch.ao.quantization.allow_exported_model_train_eval(exported_model)
+        exported_module = exported_model.module()
+
+        # # testing acc of exported model before quantization
+        # print('export_model acc before qat!')    
+        # self.trainer.export_model = exported_module.to(device)
+        # metrics = self.trainer.validator(self.trainer) 
+
+        # prepare model for PT2E QAT
+        prepared_model = prepare_qat_pt2e(exported_module, quantizer)
+        torch.ao.quantization.move_exported_model_to_eval(prepared_model)
+        torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+
+        # # testing acc of prepared model
+        # print('prepared_model acc before qat!')
+        # metrics = self.trainer.validator(self.trainer) 
+    
+        # TODO: 验证是否正常
+        qat_state_dict = self.ckpt.get("qat_model") if isinstance(self.ckpt, dict) else None
+        if qat_state_dict:
+            incompatible = prepared_model.load_state_dict(qat_state_dict, strict=False)
+            missing = len(incompatible.missing_keys)
+            unexpected = len(incompatible.unexpected_keys)
+            if missing or unexpected:
+                LOGGER.warning(
+                    "Loaded QAT state from %s with %d missing and %d unexpected keys.",
+                    self.ckpt_path,
+                    missing,
+                    unexpected,
+                )
+            else:
+                LOGGER.info("Loaded QAT state from %s into prepared PT2E model.", self.ckpt_path)
+
+        self.trainer.qat_model = prepared_model.to(device)
+        self.model = self.model.to(device)
+
         self.trainer.hub_session = self.session  # attach optional HUB session
         self.trainer.train()
+
         # Update model and cfg after training
         if RANK in {-1, 0}:
             ckpt = self.trainer.best if self.trainer.best.exists() else self.trainer.last
             self.model, self.ckpt = attempt_load_one_weight(ckpt)
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
-        
-        torch.save(self.trainer.qat_model.state_dict(), "./last_checkpoint.pth")
-        
-        import copy
-        prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
-        quantized_model = convert_pt2e(prepared_model_copy)
-        onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
-        onnx_program.optimize()
-        onnx_program.save("./{}_qat.onnx".format(model_name))
 
-        from onnxslim import slim
-        import onnx
+            # 保存last-qat.pt
+            qat_pt_sp = f"{path_parent}/{file_name}_qat.pt"
+            torch.save(self.trainer.qat_model.state_dict(), qat_pt_sp)
 
-        model = onnx.load("./{}_qat.onnx".format(model_name))
-        model_simp = slim(model)
-        sim_path = "./{}_qat_slim.onnx".format(model_name)
-        onnx.save(model_simp, sim_path)
-        print(f"save onnx model to [{sim_path}] Successfully!")
+            # 保存last-qat.onnx
+            prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
+            quantized_model = convert_pt2e(prepared_model_copy)
+            onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)
+            onnx_program.optimize()
+            onnx_program.save(qat_onnx_sp)
+
+            model_simp = slim(onnx_program.model_proto)
+            onnx.save(model_simp, qat_onnx_sim_sp)
+            print(f"save onnx model to [{qat_onnx_sim_sp}] Successfully!")
+
 
         return self.metrics
 

@@ -60,6 +60,11 @@ from torch.ao.quantization._learnable_fake_quantize import _LearnableFakeQuantiz
 
 from torch.ao.quantization import HistogramObserver,FakeQuantizeBase,_DerivedObserverOrFakeQuantize,disable_fake_quant, enable_fake_quant, disable_observer, enable_observer
 
+_WEIGHT_FQ_DTYPES = {torch.int8, getattr(torch, "qint8", None)}
+_ACT_FQ_DTYPES = {torch.uint8, getattr(torch, "quint8", None)}
+_WEIGHT_FQ_QSCHEMES = {torch.per_channel_symmetric, torch.per_channel_affine}
+_ACT_FQ_QSCHEMES = {torch.per_tensor_affine, torch.per_tensor_symmetric}
+
 def enable_learn(mod):
     """Enable observation for this module.
 
@@ -83,6 +88,34 @@ def disable_learn(mod):
     """
     if isinstance(mod, _LearnableFakeQuantize):
         mod.toggle_qparam_learning(False)
+
+
+def _get_fake_quant_attr(mod, attr):
+    """Return fake-quant attribute from the module itself or its observer."""
+    if hasattr(mod, attr):
+        return getattr(mod, attr)
+    observer = getattr(mod, "activation_post_process", None)
+    if observer is not None and hasattr(observer, attr):
+        return getattr(observer, attr)
+    return None
+
+
+def _get_fake_quant_kind(mod):
+    """Classify PT2E fake-quant modules into weight, activation or generic buckets."""
+    if not (isinstance(mod, FakeQuantizeBase) or _is_fake_quant_script_module(mod)):
+        return None
+
+    dtype = _get_fake_quant_attr(mod, "dtype")
+    qscheme = _get_fake_quant_attr(mod, "qscheme")
+    ch_axis = _get_fake_quant_attr(mod, "ch_axis")
+
+    if dtype in _WEIGHT_FQ_DTYPES or qscheme in _WEIGHT_FQ_QSCHEMES:
+        return "weight"
+    if dtype in _ACT_FQ_DTYPES:
+        return "activation"
+    if qscheme in _ACT_FQ_QSCHEMES and ch_axis is None:
+        return "activation"
+    return "generic"
 
 class BaseTrainer:
     """
@@ -164,6 +197,11 @@ class BaseTrainer:
         with torch_distributed_zero_first(LOCAL_RANK):  # avoid auto-downloading dataset multiple times
             self.trainset, self.testset = self.get_dataset()
         self.ema = None
+        self.qat_model = None
+        self._qat_schedule_state = None
+        self._qat_fake_quant_summary = None
+        self._qat_metric_threshold_reached = False
+        self._qat_metric_threshold_value = None
 
         # Optimization utils init
         self.lf = None
@@ -325,7 +363,7 @@ class BaseTrainer:
             self.validator = self.get_validator()
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix="val")
             self.metrics = dict(zip(metric_keys, [0] * len(metric_keys)))
-            self.ema = ModelEMA(self.model)
+            self.ema = ModelEMA(self.model, decay=0.0)
             if self.args.plots:
                 self.plot_training_labels()
 
@@ -333,14 +371,27 @@ class BaseTrainer:
         self.accumulate = max(round(self.args.nbs / self.batch_size), 1)  # accumulate loss before optimizing
         weight_decay = self.args.weight_decay * self.batch_size * self.accumulate / self.args.nbs  # scale weight_decay
         iterations = math.ceil(len(self.train_loader.dataset) / max(self.batch_size, self.args.nbs)) * self.epochs
-        self.optimizer = self.build_optimizer(
-            model=self.model,
-            name=self.args.optimizer,
-            lr=self.args.lr0,
-            momentum=self.args.momentum,
-            decay=weight_decay,
-            iterations=iterations,
-        )
+
+        if self.qat_model is not None:
+            print('use qat optimizer!')
+            self.optimizer = self.smart_optimizer(
+                model=self.qat_model,
+                name=self.args.optimizer,
+                lr=self.args.lr0,
+                momentum=self.args.momentum,
+                decay=weight_decay,
+                iterations=iterations,
+            )
+        else:
+            print('use normal optimizer!')
+            self.optimizer = self.build_optimizer(
+                model=self.model,
+                name=self.args.optimizer,
+                lr=self.args.lr0,
+                momentum=self.args.momentum,
+                decay=weight_decay,
+                iterations=iterations,
+            )
         # Scheduler
         self._setup_scheduler()
         self.stopper, self.stop = EarlyStopping(patience=self.args.patience), False
@@ -372,49 +423,20 @@ class BaseTrainer:
             self.plot_idx.extend([base_idx, base_idx + 1, base_idx + 2])
         epoch = self.start_epoch
         self.optimizer.zero_grad()  # zero any resumed gradients to ensure stability on train start
-        # self.qat_model.apply(enable_learn)
+
+        self.qat_model.train()
+        # loss function
+        if str(type(self.model)).find('DistributedDataParallel') != -1:
+            criterion = self.model.module.init_criterion()
+        else:
+            criterion = self.model.init_criterion()
         while True:
-            # self.qat_model.train()
-            # # Optionally disable observer/batchnorm stats after certain number of epochs
-            # if epoch >= 10:
-            #     print("Disabling observer for subseq epochs, epoch = ", epoch)
-            #     self.qat_model.apply(torch.ao.quantization.disable_observer)
-            # if epoch >= 5:
-            #     print("Freezing BN for subseq epochs, epoch = ", epoch)
-            #     for n in self.qat_model.graph.nodes:
-            #         # Args: input, weight, bias, running_mean, running_var, training, momentum, eps
-            #         # We set the `training` flag to False here to freeze BN stats
-            #         if n.target in [
-            #             torch.ops.aten._native_batch_norm_legit.default,
-            #             torch.ops.aten.cudnn_batch_norm.default,
-            #         ]:
-            #             new_args = list(n.args)
-            #             new_args[5] = False
-            #             n.args = new_args
-            #     self.qat_model.recompile()
             self.epoch = epoch
-            # observer初始化
-            # if epoch == 0:
-            #     # self.qat_model.eval
-            #     print('observer初始化中!!!')
-            #     self.loss_items = torch.zeros(3).to(self.device)
-            #     self.qat_model.apply(disable_fake_quant)
-            #     self.qat_model.apply(enable_observer)
-            #     # self.qat_model.apply(disable_observer)
-            #     # self.qat_model.apply(enable_fake_quant)
-            #     LOGGER.info(f"\nValidating ...")
-            #     self.metrics = self.validator(self)
-            #     self.qat_model.apply(enable_fake_quant)
-            #     self.qat_model.apply(disable_observer)
-            #     # self.qat_model.apply(enable_fake_quant)
-            #     # self.qat_model.apply(enable_observer)
             self.run_callbacks("on_train_epoch_start")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")  # suppress 'Detected lr_scheduler.step() before optimizer.step()'
                 self.scheduler.step()
 
-            # self._model_train()
-            # self.qat_model.train
             if RANK != -1:
                 self.train_loader.sampler.set_epoch(epoch)
             pbar = enumerate(self.train_loader)
@@ -447,11 +469,10 @@ class BaseTrainer:
                 # Forward
                 # with autocast(self.amp):
                 batch = self.preprocess_batch(batch)
-                # print(batch['img'].shape)
-                criterion = self.model.init_criterion()
+
                 preds = self.qat_model(batch['img'])
+ 
                 loss, self.loss_items = criterion(preds, batch)
-                # loss, self.loss_items = self.model(batch)
                 self.loss = loss.sum()
                 if RANK != -1:
                     self.loss *= world_size
@@ -501,7 +522,8 @@ class BaseTrainer:
             self.run_callbacks("on_train_epoch_end")
             if RANK in {-1, 0}:
                 final_epoch = epoch + 1 >= self.epochs
-                self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
+                if self.ema:
+                    self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
 
                 # Validation
                 if self.args.val or final_epoch or self.stopper.possible_stop or self.stop:
@@ -546,7 +568,7 @@ class BaseTrainer:
         #     self.final_eval()
         #     if self.args.plots:
         #         self.plot_metrics()
-        #     self.run_callbacks("on_train_end")
+        #     self.run_callbacks("on_train_end")  
         # self._clear_memory()
         # unset_deterministic()
         self.run_callbacks("teardown")
@@ -609,6 +631,7 @@ class BaseTrainer:
                 "epoch": self.epoch,
                 "best_fitness": self.best_fitness,
                 "model": None,  # resume and final checkpoints derive from EMA
+                "qat_model": self.qat_model.state_dict() if hasattr(self, 'qat_model') and self.qat_model is not None else None,
                 "ema": deepcopy(self.ema.ema).half(),
                 "updates": self.ema.updates,
                 "optimizer": convert_optimizer_state_dict_to_fp16(deepcopy(self.optimizer.state_dict())),
@@ -668,7 +691,7 @@ class BaseTrainer:
         Returns:
             (dict): Optional checkpoint to resume training from.
         """
-        if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed
+        if isinstance(self.model, torch.nn.Module) and self.qat_model is not None:  # if model is loaded beforehand. No setup needed
             return
 
         cfg, weights = self.model, None
@@ -683,13 +706,38 @@ class BaseTrainer:
 
     def optimizer_step(self):
         """Perform a single step of the training optimizer with gradient clipping and EMA update."""
+        model_for_optim = self.qat_model if self.qat_model is not None else self.model
         self.scaler.unscale_(self.optimizer)  # unscale gradients
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)  # clip gradients
+        torch.nn.utils.clip_grad_norm_(model_for_optim.parameters(), max_norm=10.0)  # clip gradients
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad()
-        if self.ema:
-            self.ema.update(self.model)
+        if self.ema and self.qat_model is None:
+            self.ema.update(model_for_optim)
+
+    def _get_qat_trigger_metric(self):
+        """Return the validation metric used for fake-quant threshold triggering."""
+        if not isinstance(self.metrics, dict):
+            return None
+        metric = self.metrics.get("metrics/mAP50-95(B)")
+        return float(metric) if metric is not None else None
+
+    def _update_qat_metric_threshold_state(self):
+        """Latch the metric-threshold trigger once validation reaches the target."""
+        threshold = float(getattr(self.args, "qat_enable_fake_quant_metric_threshold", -1.0))
+        if threshold < 0 or self._qat_metric_threshold_reached:
+            return self._qat_metric_threshold_reached, self._qat_metric_threshold_value, threshold
+
+        metric = self._get_qat_trigger_metric()
+        if metric is not None and metric >= threshold:
+            self._qat_metric_threshold_reached = True
+            self._qat_metric_threshold_value = metric
+            LOGGER.info(
+                "QAT metric trigger reached: metrics/mAP50-95(B)=%.5f >= %.5f",
+                metric,
+                threshold,
+            )
+        return self._qat_metric_threshold_reached, self._qat_metric_threshold_value, threshold
 
     def preprocess_batch(self, batch):
         """Allows custom preprocessing model inputs and ground truths depending on task type."""
@@ -828,7 +876,7 @@ class BaseTrainer:
         start_epoch = ckpt.get("epoch", -1) + 1
         if ckpt.get("optimizer", None) is not None:
             self.optimizer.load_state_dict(ckpt["optimizer"])  # optimizer
-            best_fitness = ckpt["best_fitness"]
+            # best_fitness = ckpt["best_fitness"]
         if self.ema and ckpt.get("ema"):
             self.ema.ema.load_state_dict(ckpt["ema"].float().state_dict())  # EMA
             self.ema.updates = ckpt["updates"]
@@ -915,5 +963,52 @@ class BaseTrainer:
         LOGGER.info(
             f"{colorstr('optimizer:')} {type(optimizer).__name__}(lr={lr}, momentum={momentum}) with parameter groups "
             f"{len(g[1])} weight(decay=0.0), {len(g[0])} weight(decay={decay}), {len(g[2])} bias(decay=0.0)"
+        )
+        return optimizer
+
+    def smart_optimizer(self, model, name="Adam", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
+        """
+        Initializes YOLOv5 smart optimizer with 3 parameter groups for different decay configurations.
+
+        Groups are 0) weights with decay, 1) weights no decay, 2) biases no decay.
+        """
+        g = [], [], []  # optimizer parameter groups
+        if name == "auto":
+            LOGGER.info(
+                f"{colorstr('optimizer:')} 'optimizer=auto' found, "
+                f"ignoring 'lr0={self.args.lr0}' and 'momentum={self.args.momentum}' and "
+                f"determining best 'optimizer', 'lr0' and 'momentum' automatically... "
+            )
+            nc = self.data.get("nc", 10)  # number of classes
+            lr_fit = round(0.002 * 5 / (4 + nc), 6)  # lr0 fit equation to 6 decimal places
+            name, lr, momentum = ("SGD", 0.01, 0.9) if iterations > 10000 else ("AdamW", lr_fit, 0.9)
+            self.args.warmup_bias_lr = 0.0  # no higher than 0.01 for Adam
+
+        bn = tuple(v for k, v in nn.__dict__.items() if "Norm" in k)  # normalization layers, i.e. BatchNorm2d()
+        for v in model.modules():
+            for p_name, p in v.named_parameters(recurse=0):
+                if p_name == "bias":  # bias (no decay)
+                    g[2].append(p)
+                elif p_name == "weight" and isinstance(v, bn):  # weight (no decay)
+                    g[1].append(p)
+                else:
+                    g[0].append(p)  # weight (with decay)
+
+        if name == "Adam":
+            optimizer = torch.optim.Adam(g[2], lr=lr, betas=(momentum, 0.999))  # adjust beta1 to momentum
+        elif name == "AdamW":
+            optimizer = torch.optim.AdamW(g[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+        elif name == "RMSProp":
+            optimizer = torch.optim.RMSprop(g[2], lr=lr, momentum=momentum)
+        elif name == "SGD":
+            optimizer = torch.optim.SGD(g[2], lr=lr, momentum=momentum, nesterov=True)
+        else:
+            raise NotImplementedError(f"Optimizer {name} not implemented.")
+
+        optimizer.add_param_group({"params": g[0], "weight_decay": decay})  # add g0 with weight_decay
+        optimizer.add_param_group({"params": g[1], "weight_decay": 0.0})  # add g1 (BatchNorm2d weights)
+        LOGGER.info(
+            f"{colorstr('optimizer:')} {type(optimizer).__name__}(lr={lr}) with parameter groups "
+            f"{len(g[1])} weight(decay=0.0), {len(g[0])} weight(decay={decay}), {len(g[2])} bias"
         )
         return optimizer

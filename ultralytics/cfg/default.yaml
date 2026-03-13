@@ -5,6 +5,9 @@
 
 task: detect # (str) YOLO task, i.e. detect, segment, classify, pose, obb
 mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+qat_pt_path: "./last_checkpoint.pth" # (str) qat模型的权重
+qat_onnx_sp: "./last_checkpoint.onnx" # (str) qat模型转onnx保存路径
+qat_onnx_imgsz: [640, 640]
 
 # Train settings -------------------------------------------------------------------------------------------------------
 model: # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml

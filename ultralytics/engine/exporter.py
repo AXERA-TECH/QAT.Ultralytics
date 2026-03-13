@@ -143,6 +143,7 @@ def export_formats():
         ["NCNN", "ncnn", "_ncnn_model", True, True, ["batch", "half"]],
         ["IMX", "imx", "_imx_model", True, True, ["int8", "fraction"]],
         ["RKNN", "rknn", "_rknn_model", False, False, ["batch", "name"]],
+        ["QuantOnnx", "axera", "_qat_slim.onnx", True, True, ["batch", "name"]],
     ]
     return dict(zip(["Format", "Argument", "Suffix", "CPU", "GPU", "Arguments"], zip(*x)))
 
@@ -265,7 +266,7 @@ class Exporter:
         flags = [x == fmt for x in fmts]
         if sum(flags) != 1:
             raise ValueError(f"Invalid export format='{fmt}'. Valid formats are {fmts}")
-        (jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, mnn, ncnn, imx, rknn) = (
+        (jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, mnn, ncnn, imx, rknn, axera) = (
             flags  # export booleans
         )
 
@@ -280,6 +281,9 @@ class Exporter:
             dla = self.args.device.split(":")[-1]
             self.args.device = "0"  # update device to "0"
             assert dla in {"0", "1"}, f"Expected self.args.device='dla:0' or 'dla:1, but got {self.args.device}."
+        if fmt == "axear" and self.args.device is None:
+            LOGGER.info("GPU export, automatically assigning device=0")
+            self.args.device = "0"
         if imx and self.args.device is None and torch.cuda.is_available():
             LOGGER.warning("Exporting on CPU while CUDA is available, setting device=0 for faster export on GPU.")
             self.args.device = "0"  # update device to "0"
@@ -484,7 +488,9 @@ class Exporter:
             f[13], _ = self.export_imx()
         if rknn:
             f[14], _ = self.export_rknn()
-
+        if axera:
+            f[15], _ = self.export_axera()
+            
         # Finish
         f = [str(x) for x in f if x]  # filter out '' and None
         if any(f):
@@ -1281,6 +1287,122 @@ class Exporter:
 
         return f, None
 
+    @try_export
+    def export_axera(self, prefix=colorstr("ONNX:")):
+        """YOLO ONNX export."""
+        requirements = ["onnx>=1.12.0,<1.20.0"]
+        if self.args.simplify:
+            requirements += ["onnxslim>=0.1.46", "onnxruntime" + ("-gpu" if torch.cuda.is_available() else "")]
+        check_requirements(requirements)
+        import onnx  # noqa
+
+        opset_version = 18
+        LOGGER.info(f"\n{prefix} starting export with onnx {onnx.__version__} opset {opset_version}...")
+        # print(self.file)
+        print(type(self.model))
+        # f = str(self.file.with_suffix("_qat_slim.onnx"))
+        from ultralytics.utils.ax_quantizer import(
+            ax_load_config,
+            AXQuantizer,
+        )
+        from onnxslim import slim
+        from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
+        # quantizer
+        global_config, regional_configs = ax_load_config("./config.json")
+        quantizer = AXQuantizer()
+        quantizer.set_global(global_config) 
+        quantizer.set_regional(regional_configs)
+        # print(f'self.args {self.args}')
+        device = 'cuda'
+        # float_model = self.model.train().to(device)
+        float_model = self.model.train().to(device)
+        inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
+        qat_onnx_sp = self.args.get('qat_onnx_sp', './last_checkpoint.onnx')
+        path_obj = Path(qat_onnx_sp)
+        path_parent = path_obj.parent
+        path_parent.mkdir(parents=True, exist_ok=True)
+        file_name = path_obj.stem
+
+        inputs = torch.rand(1, 3, inp_h, inp_w).to(device)
+        print(f'export onnx input shape: {inputs.shape}')
+        dynamic_shapes = {
+            "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
+        }
+        dynamic_shapes = None
+        exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
+        prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+        state_dict1 = torch.load(self.args.qat_pt_path, map_location=torch.device(device))
+        state_dict2 = prepared_model.state_dict()
+        for i, (k,v) in enumerate(state_dict1.items()):
+            print(k, v.shape)
+            if i == 10:
+                break
+        for i, (k,v) in enumerate(state_dict2.items()):
+            print(k, v.shape)
+            if i == 10:
+                break
+ 
+        exit()
+        prepared_model.load_state_dict(torch.load(self.args.qat_pt_path, map_location=torch.device(device)))
+        # qat_onnx_sp
+        quantized_model = convert_pt2e(prepared_model)
+        onnx_program = torch.onnx.export(quantized_model, (inputs,), dynamo=True, opset_version=21)
+        onnx_program.optimize()
+        onnx_program.save(qat_onnx_sp)
+
+        model_simp = slim(onnx_program.model_proto)
+        sim_path = f"{path_parent}/{file_name}_qat_slim.onnx"
+        onnx.save(model_simp, sim_path)
+        print(f"save onnx model to [{sim_path}] Successfully!")
+        exit()
+        return sim_path, model_simp
+        # output_names = ["output0", "output1"] if isinstance(self.model, SegmentationModel) else ["output0"]
+        # dynamic = self.args.dynamic
+        # if dynamic:
+        #     dynamic = {"images": {0: "batch", 2: "height", 3: "width"}}  # shape(1,3,640,640)
+        #     if isinstance(self.model, SegmentationModel):
+        #         dynamic["output0"] = {0: "batch", 2: "anchors"}  # shape(1, 116, 8400)
+        #         dynamic["output1"] = {0: "batch", 2: "mask_height", 3: "mask_width"}  # shape(1,32,160,160)
+        #     elif isinstance(self.model, DetectionModel):
+        #         dynamic["output0"] = {0: "batch", 2: "anchors"}  # shape(1, 84, 8400)
+        #     if self.args.nms:  # only batch size is dynamic with NMS
+        #         dynamic["output0"].pop(2)
+        # if self.args.nms and self.model.task == "obb":
+        #     self.args.opset = opset_version  # for NMSModel
+
+        # with arange_patch(self.args):
+        #     export_onnx(
+        #         NMSModel(self.model, self.args) if self.args.nms else self.model,
+        #         self.im,
+        #         f,
+        #         opset=opset_version,
+        #         input_names=["images"],
+        #         output_names=output_names,
+        #         dynamic=dynamic or None,
+        #     )
+
+        # # Checks
+        # model_onnx = onnx.load(f)  # load onnx model
+
+        # # Simplify
+        # if self.args.simplify:
+        #     try:
+        #         import onnxslim
+
+        #         LOGGER.info(f"{prefix} slimming with onnxslim {onnxslim.__version__}...")
+        #         model_onnx = onnxslim.slim(model_onnx)
+
+        #     except Exception as e:
+        #         LOGGER.warning(f"{prefix} simplifier failure: {e}")
+
+        # # Metadata
+        # for k, v in self.metadata.items():
+        #     meta = model_onnx.metadata_props.add()
+        #     meta.key, meta.value = k, str(v)
+
+        # onnx.save(model_onnx, f)
+        # return f, model_onnx
+    
     def _add_tflite_metadata(self, file):
         """Add metadata to *.tflite models per https://ai.google.dev/edge/litert/models/metadata."""
         import zipfile

@@ -51,7 +51,7 @@ from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import select_device, smart_inference_mode
 
 from ultralytics.utils.ax_quantizer import(
-    load_config,
+    ax_load_config,
     AXQuantizer,
 )
 
@@ -342,19 +342,23 @@ class BasePredictor:
                     float_model = DetectionModel(self.model.model.yaml, nc=80, verbose=True and RANK == -1)
                     float_model.load(self.model.model)
                     # quantizer
-                    global_config, regional_configs = load_config("./config.json")
+                    global_config, regional_configs = ax_load_config("./config.json")
                     quantizer = AXQuantizer()
                     quantizer.set_global(global_config) 
                     quantizer.set_regional(regional_configs)
                     # float_model.train()
                     float_model = float_model.to("cuda")
-                    inputs = torch.rand(1, 3, 640, 640).to("cuda")
+                    
+                    inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])
+                    qat_pt_path = self.args.get('qat_pt_path', './last_checkpoint.pth')
+
+                    inputs = torch.rand(1, 3, inp_h, inp_w).to("cuda")
                     dynamic_shapes = {
                         "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
                     }
                     exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
                     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-                    prepared_model.load_state_dict(torch.load("./last_checkpoint.pth"))
+                    prepared_model.load_state_dict(torch.load(qat_pt_path)['qat_model'])
                     quantized_model = convert_pt2e(prepared_model)
 
                     import copy

@@ -1,0 +1,26 @@
+{
+  "model_type": "QuantONNX",
+  "npu_mode": "NPU1",
+  "quant": {
+    "input_configs": [
+      {
+        "tensor_name": "DEFAULT",
+        "calibration_dataset": "s3://npu-ci/data/data.zip"
+      }
+    ],
+    "calibration_method": "MinMax",
+    "layer_configs":  [
+      {
+        "op_types": ["MatMul"],
+        "data_type": "S16"
+      },
+      {
+        "layer_names": ["node_Split_1764", "node_Transpose_765", "node_Transpose_791"],
+        "data_type": "S16"
+      }
+    ]
+  },
+  "compiler": {
+    "check": 2
+  }
+}

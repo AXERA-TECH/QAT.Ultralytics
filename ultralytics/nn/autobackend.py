@@ -140,6 +140,7 @@ class AutoBackend(nn.Module):
             imx,
             rknn,
             triton,
+            axera
         ) = self._model_type(w)
         fp16 &= pt or jit or onnx or xml or engine or nn_module or triton  # FP16
         nhwc = coreml or saved_model or pb or tflite or edgetpu or rknn  # BHWC formats (vs torch BCWH)

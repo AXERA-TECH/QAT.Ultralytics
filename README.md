@@ -1,120 +1,67 @@
+# QAT.Ultralytics
 
-工程基于Ultralytics仓库用于做yolo系列的QAT训练；
+本仓库基于 Ultralytics，用于调试和验证 YOLO 系列模型的 QAT（Quantization Aware Training）训练、导出与部署转换流程。
 
-|model|map@50-95|map@50|
-|--|--|--|
-|yolov11s.pt|0.466|0.635|
-|yolov11s_8w8f_qdq.onnx|0.456|0.628|
+## 精度参考
 
-## 环境安装
-基于官方工程，安装ultralytics库
+| model | map@50-95 | map@50 |
+| -- | -- | -- |
+| yolov11s-fp32 | 0.466 | 0.635 |
+| yolov11s_8w8f_qdq.onnx | 0.456 | 0.628 |
+| yolov11n-fp32 | 0.391 | 0.561 |
+| yolov11n_8w8f_qdq.onnx | 0.383 | 0.542 |
 
-```
+## 环境要求
+
+安装依赖：
+
+```bash
+cd QAT.Ultralytics
 pip install -r requirements.txt
+pip install -e .
 ```
 
-安装额外库
+版本约束：
 
-```
-pip install ultralytics
-```
+- `pytorch==2.6`
+- `onnxruntime==1.21.0`
+- `onnxscript==0.4.0`
 
-我们发现 `onnxruntime` 和 `onnxscript` 的其他版本可能引起精度误差和导出错误，因此**pytorch\==2.6; onnxruntime\==1.21.0 onnxscript\==0.4.0** 是必须的。
+如果使用 `yolo11n` 或自定义的轻量模型进行QAT，先阅读 [README_nano.md](./README_nano.md)。
 
-## 数据集路径修改
+## 快速开始
 
-修改 ./ultralytics/cfg/datasets/coco.yaml 中的数据集路径;
+1. 确认数据集配置可用。默认脚本依赖 `coco.yaml`，需要保证其中的数据集路径正确。
+2. 运行训练：
 
-## QAT训练
-```
+```bash
+# 单卡
 python train.py
+# 多卡，nproc_per_node对应train-gpus.py中device数量
+python -m torch.distributed.run --nproc_per_node 2 train-gpus.py
+
+# 本仓库含自定义的qat参数，如果上述指令报错，可能使用了其他环境Ultralytics仓库，使用如下指令尝试
+PYTHONPATH=/your/project/path/QAT.Ultralytics:$PYTHONPATH python train.py
+PYTHONPATH=/your/project/path/QAT.Ultralytics:$PYTHONPATH python -m torch.distributed.run --nproc_per_node 2 train-gpus.py
 ```
 
-## onnx eval
-```
+3. 训练后评估 QAT 权重：
+
+```bash
 python eval.py
 ```
-eval精度如下：
 
-```
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.456
-Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.628
-Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.495
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.286
-Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.498
-Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.633
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.354
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.591
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.645
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.463
-Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.698
-Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.810
+4. 导出 QuantONNX。运行前先确认 `export.py` 里的 `qat_weights` 指向本次训练输出：
 
+```bash
+python export.py
 ```
 
-## onnx test
-```
+5. 使用示例图片推理验证：
+
+```bash
 python test.py
 ```
-test会加载根目录下的bus.jpg文件进行推理，然后输出推理结果
+## 部署
+请阅读 [qat_deployment.md](./compile/qat_deployment.md)。
 
-<img src="./assets/result.jpg" width="405px">
-
-## onnx转AXModel
-
-#### 1、模型
-
-使用`yolo11s_qat_slim.onnx`
-
-
-<img src="assets/image-2.png">
-
-#### 2、配置文件
-``` json
-{
-  "model_type": "QuantONNX",
-  "npu_mode": "NPU1",
-  "quant": {
-    "input_configs": [
-      {
-        "tensor_name": "DEFAULT",
-        "calibration_dataset": "s3://npu-ci/data/data.zip"
-      }
-    ],
-    "calibration_method": "MinMax",
-    "layer_configs":  [
-      {
-        "op_types": ["MatMul"],
-        "data_type": "S16",
-      },
-      {
-        "layer_names": ["node_Reshape_740", "node_Split_1800", "node_Transpose_765", "node_Transpose_791"],
-        "data_type": "S16",
-      },
-    ],
-  },
-  "compiler": {
-    "check": 2
-  }
-}
-
-```
-其中`layer_names`中的节点为`MatMul`节点前的`reshape`,`split`,`transpose`等算子。
-
-##### 2.1 使用Netron打开`yolo11s_qat_slim.onnx`进行查找，搜索`MatMul`
-
-![alt text1](assets/image.png)
-
-第二处：
-
-![alt text](assets/image-1.png)
-
-##### 2.2 将相关节点放入`layer_names`中，并置为`S16`数据类型。
-
-**注**：QAT时为保证`MatMul`算子精度，避免上溢出等问题，未对`MatMul`做更细粒度的量化，而`MatMul`前的`shape`变换算子，被统一纳入子图做QAT，它们在训练时的量化精度相同，所以在转换时需要与`MatMul`算子置为相同的量化数据类型。
-
-#### 3、转换
-
-``` shell
-pulsar2 build --input ./weights/yolo11s_qat_slim.onnx --config ./config.json --output_dir ./output
-```

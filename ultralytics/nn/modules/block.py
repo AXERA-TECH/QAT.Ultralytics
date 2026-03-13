@@ -217,11 +217,20 @@ class SPPF(nn.Module):
         self.cv2 = Conv(c_ * 4, c2, 1, 1)
         self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
 
+    # def forward(self, x):
+    #     """Apply sequential pooling operations to input and return concatenated feature maps."""
+    #     y = [self.cv1(x)]
+    #     y.extend(self.m(y[-1]) for _ in range(3))
+    #     return self.cv2(torch.cat(y, 1))
+
     def forward(self, x):
         """Apply sequential pooling operations to input and return concatenated feature maps."""
-        y = [self.cv1(x)]
-        y.extend(self.m(y[-1]) for _ in range(3))
-        return self.cv2(torch.cat(y, 1))
+        # Keep the pooling chain explicit so torch.export preserves the serial dependency.
+        x = self.cv1(x)
+        y1 = self.m(x)
+        y2 = self.m(y1)
+        y3 = self.m(y2)
+        return self.cv2(torch.cat((x, y1, y2, y3), 1))
 
 
 class C1(nn.Module):

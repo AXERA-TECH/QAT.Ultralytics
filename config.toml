@@ -1,0 +1,10 @@
+[mcp_servers.drawio]
+command = "npx"
+args = ["-y", "drawio-mcp-server", "--editor"]
+
+approval_policy = "untrusted"
+model_reasoning_effort = "high"
+
+sandbox_mode = "danger-full-access"
+[sandbox_workspace_write]
+network_access = true

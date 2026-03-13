@@ -1,11 +1,13 @@
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("yolo11s.yaml")
-model = YOLO("yolo11s.pt")  # pretrained YOLO11n model
+model = YOLO("yolo11n.yaml")
 
 # Run batched inference on a list of images
-results = model(["bus.jpg"],onnxpath='./yolo11s_qat_slim.onnx')  # return a list of Results objects
+results = model(["bus.jpg"],
+                qat_onnx_imgsz=[640,640],
+                qat_pt_path='./runs/detect/qat/weights/last.pt',
+                )
 
 # Process results list
 for result in results:

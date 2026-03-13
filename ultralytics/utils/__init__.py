@@ -26,6 +26,7 @@ import tqdm
 
 from ultralytics import __version__
 from ultralytics.utils.patches import imread, imshow, imwrite, torch_load, torch_save  # for patches
+from ultralytics.utils.pt2e_bn_patch import patch_pt2e_batchnorm_handling
 
 # PyTorch Multi-GPU DDP Constants
 RANK = int(os.getenv("RANK", -1))
@@ -129,6 +130,8 @@ os.environ["NUMEXPR_MAX_THREADS"] = str(NUM_THREADS)  # NumExpr max threads
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # suppress verbose TF compiler warnings in Colab
 os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"  # suppress "NNPACK.cpp could not initialize NNPACK" warnings
 os.environ["KINETO_LOG_LEVEL"] = "5"  # suppress verbose PyTorch profiler output when computing FLOPs
+
+patch_pt2e_batchnorm_handling()
 
 if TQDM_RICH := str(os.getenv("YOLO_TQDM_RICH", False)).lower() == "true":
     from tqdm import rich

@@ -358,7 +358,7 @@ class BasePredictor:
                     }
                     exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
                     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
-                    prepared_model.load_state_dict(torch.load(qat_pt_path))
+                    prepared_model.load_state_dict(torch.load(qat_pt_path)['qat_model'])
                     quantized_model = convert_pt2e(prepared_model)
 
                     import copy

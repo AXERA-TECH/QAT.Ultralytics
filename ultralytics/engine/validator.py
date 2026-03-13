@@ -138,6 +138,28 @@ class BaseValidator:
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
 
     @staticmethod
+    def _get_detection_head(model):
+        """Resolve the terminal Detect/Segment head from raw, wrapped, or exported YOLO models."""
+        base_model = de_parallel(model)
+        model_roots = [getattr(base_model, "model", None)]
+
+        nested_model = getattr(model_roots[0], "model", None) if model_roots[0] is not None else None
+        if nested_model is not None:
+            model_roots.append(nested_model)
+
+        for root in model_roots:
+            if root is None:
+                continue
+            try:
+                head = root[-1]
+            except Exception:
+                continue
+            if isinstance(head, (Detect, Segment)):
+                return head
+
+        raise TypeError(f"Unsupported detection head type for validation: {type(model)}")
+
+    @staticmethod
     def _resolve_device(device, batch=1):
         """Resolve user input to a concrete torch.device without remapping to cuda:0."""
         if isinstance(device, torch.device):
@@ -210,16 +232,9 @@ class BaseValidator:
             # Force FP16 val during training
             self.args.half = self.device.type != "cpu" and trainer.amp
             qat_model = getattr(trainer, "qat_model", None)
-            model = trainer.model if qat_model is not None else (trainer.ema.ema or trainer.model)
+            model = trainer.ema.ema or trainer.model
             model = model.half() if self.args.half else model.float()
-            # 优先使用qat_model进行验证（如果存在），而不是浮点模型
-            # if hasattr(trainer, 'qat_model') and trainer.qat_model is not None:
-            #     model = trainer.qat_model
-            #     torch.ao.quantization.move_exported_model_to_eval(model)
-            # else:
-            #     model = trainer.ema.ema or trainer.model
-            #     model = model.half() if self.args.half else model.float()
-            #     model.eval()
+ 
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
@@ -308,6 +323,15 @@ class BaseValidator:
         bar = TQDM(self.dataloader, desc=self.get_desc(), total=len(self.dataloader))
         self.init_metrics(de_parallel(model))
         self.jdict = []  # empty before each val
+
+        # det_head = self._get_detection_head(model if self.training else model.model)
+        if self.training:
+            det_id = list(model.model._modules.keys())[-1]
+            det_head = model.model._modules.get(det_id)
+        else:
+            det_id = list(model.model.model._modules.keys())[-1]
+            det_head = model.model.model._modules.get(det_id)
+
         for batch_i, batch in enumerate(bar):
             self.run_callbacks("on_val_batch_start")
             self.batch_i = batch_i
@@ -327,14 +351,8 @@ class BaseValidator:
                         backbone_out = qat_preds[0]
                     elif isinstance(det_head, Detect):
                         backbone_out = qat_preds
-
-                    if self.training:
-                        det_id = list(model.model._modules.keys())[-1]
-                        det_head = model.model._modules.get(det_id)
                     else:
-                        # 默认加载EMA Model
-                        det_id = list(model.model.model._modules.keys())[-1]
-                        det_head = model.model.model._modules.get(det_id)
+                        raise TypeError(f"Unsupported detection head type for QAT validation: {type(det_head)}")
 
                     if isinstance(backbone_out, dict):
                         max_det = getattr(self.args, "max_det", 300)

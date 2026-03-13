@@ -855,17 +855,21 @@ class Model(torch.nn.Module):
         file_name = path_obj.stem
         qat_onnx_sim_sp = f"{path_parent}/{file_name}_qat_slim.onnx"
 
-
+        # print(f'RANK {RANK}')
+        # print(f'LOCAL_RANK {LOCAL_RANK}')
         if RANK >= 0:
             device = f'cuda:{LOCAL_RANK}'
         else:
-            device = 'cuda'
+            device = torch.device("cuda")
         # print(inputs.device)
         # print(next(iter(self.model.state_dict().values())).device) 
         # print(f'RANK {RANK}')
-
+        # print(f'LOCAL_RANK {LOCAL_RANK}')
+        self.model.to(device)
+        # print(f'device {device}')
+        # print(f'RANK {RANK}')
         if RANK in [-1, 0]:
-            inputs = torch.rand(1, 3, inp_h, inp_w).to(device)
+            inputs = torch.rand(2, 3, inp_h, inp_w).to(device)
             print(f'export onnx input shape: {inputs.shape}')
             onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
             onnx_program.optimize()
@@ -912,7 +916,7 @@ class Model(torch.nn.Module):
         # print('prepared_model acc before qat!')
         # metrics = self.trainer.validator(self.trainer) 
     
-        # load QAT state dict if resuming from a checkpoint that contains it
+        # TODO: 验证是否正常
         qat_state_dict = self.ckpt.get("qat_model") if isinstance(self.ckpt, dict) else None
         if qat_state_dict:
             incompatible = prepared_model.load_state_dict(qat_state_dict, strict=False)
@@ -940,9 +944,12 @@ class Model(torch.nn.Module):
             self.model, self.ckpt = attempt_load_one_weight(ckpt)
             self.overrides = self.model.args
             self.metrics = getattr(self.trainer.validator, "metrics", None)  # TODO: no metrics returned by DDP
+
+            # 保存last-qat.pt
             qat_pt_sp = f"{path_parent}/{file_name}_qat.pt"
             torch.save(self.trainer.qat_model.state_dict(), qat_pt_sp)
 
+            # 保存last-qat.onnx
             prepared_model_copy = copy.deepcopy(self.trainer.qat_model)
             quantized_model = convert_pt2e(prepared_model_copy)
             onnx_program = torch.onnx.export(quantized_model, (inputs.to("cuda"),), dynamo=True, opset_version=21)

@@ -2,13 +2,6 @@
 
 本仓库基于 Ultralytics，用于调试和验证 YOLO 系列模型的 QAT（Quantization Aware Training）训练、导出与部署转换流程。
 
-## 项目目标
-
-- 训练可用于部署的 QAT 模型。
-- 验证导出的 ONNX/QDQ 模型精度。
-- 为 AXModel 转换提供可复现的配置和排查方法。
-
-
 ## 精度参考
 
 | model | map@50-95 | map@50 |

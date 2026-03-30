@@ -8,8 +8,8 @@
 | -- | -- | -- |
 | yolov11s-fp32 | 0.466 | 0.635 |
 | yolov11s_8w8f_qdq.onnx | 0.456 | 0.628 |
-| yolov11n-fp32 | 0.391 | 0.561 |
-| yolov11n_8w8f_qdq.onnx | 0.383 | 0.542 |
+| yolov11n-fp32 | 0.394 | 0.553 |
+| yolov11n_8w8f_qdq.onnx | 0.386 | 0.546 |
 
 ## 环境要求
 

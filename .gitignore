@@ -228,3 +228,14 @@ docs/debug-qat
 
 ./AGENTS.md
 debug
+config.toml
+.claude
+
+# agent tools
+.codex/
+.cursor/
+.windsurf/
+.roo/
+.cline/
+.aider*
+.opencode/

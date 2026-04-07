@@ -10,12 +10,12 @@ results = model.train(
     epochs=10,
     imgsz=640,
     qat_onnx_imgsz=[640, 640],
-    device=2,
+    device=0,
     project="runs/detect",      # 保存目录
     name="qat",
     save_period=1,
     qat_onnx_sp="runs/last_checkpoint.onnx", # 训练完成后，导出的onnx
     lr0=0.00004,
     lrf=0.2,
-    fraction=0.01,  # 1%训练数据，进行流程测试
+    # fraction=1,  # 可设0.01训练数据，进行流程测试
 )

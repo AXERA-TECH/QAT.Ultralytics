@@ -5,6 +5,7 @@ onnxruntime==1.21.0
 onnxruntime-gpu==1.21.0
 # onnxscript==0.4.0
 onnxslim==0.1.48
+onnx-ir<=0.1.15
 # ultralytics==8.3.104
 onnx-simplifier
 onnx_graphsurgeon

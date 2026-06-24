@@ -66,6 +66,12 @@ pulsar2 build --input runs/qat_slim.onnx --config ./compile/config_s.json --outp
 
 将`--input` 替换为真实路径。
 
+## 5. 测试
+
+可使用 [qat-ax-infer.py](qat-ax-infer.py) 进行测试；使用 [test_acc.py](test_acc.py) 比对。
+
+**注**：`qat-ax-infer` 里参考的是 `eval.py` 的流程，而不是 `test/predictor` 流程，性能和指标会略有差异。
+
 ## 5. 常见问题
 
 ### 5.1 模型转换时，节点找不到

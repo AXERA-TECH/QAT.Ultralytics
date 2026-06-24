@@ -2,7 +2,7 @@
 
 本仓库基于 [Ultralytics-8.3](https://github.com/ultralytics/ultralytics/tree/v8.3.104)，用于调试和验证 `YOLO11` 系列模型的 QAT（Quantization Aware Training）训练、导出与部署转换流程。
 
-**使用建议：** 先确认 `qat` 到部署流程畅通。使用小批量数据，训练 `1 epoch`，使用 `eval.py` 确认精度符合训练时的评估精度；使用`export.py` 导出 `qat_slim.onnx`；按照 [qat_deployment.md](./compile/qat_deployment.md) 直到 `axmodel`导出。
+**使用建议：** 先确认 `qat` 到部署流程畅通。使用 `train.py` 配置小批量数据，训练 `1 epoch`；使用 `eval.py` 确认精度符合训练时的评估精度；使用`export.py` 导出 `qat_slim.onnx`；按照 [qat_deployment.md](./compile/qat_deployment.md) 进行 `axmodel` 导出。
 
 ## 精度参考
 

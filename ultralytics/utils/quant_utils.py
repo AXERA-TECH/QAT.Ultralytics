@@ -5,6 +5,8 @@ import onnx_graphsurgeon as gs
 
 from onnxslim import slim
 from onnxruntime.quantization.quant_utils import pack_bytes_to_4bit
+from torch.ao.quantization import _DerivedObserverOrFakeQuantize
+from torch.ao.quantization.observer import HistogramObserver
 
 
 def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
@@ -94,3 +96,29 @@ def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
     # save
     onnx.save(sim_model, sim_path)
     print(f"save onnx model to [{sim_path}] Successfully!")
+
+
+def load_ptq_calibration_to_qat(prepared_model_ptq: torch.fx.GraphModule, prepared_model_qat: torch.fx.GraphModule):
+    assert len(prepared_model_qat.graph.nodes) == len(prepared_model_ptq.graph.nodes)
+    with torch.no_grad():
+        for node_ptq, node_qat in zip(prepared_model_ptq.graph.nodes, prepared_model_qat.graph.nodes):
+            if node_ptq.op == "call_module" and node_ptq.target.startswith("activation_post_process"):
+                assert node_qat.op == "call_module" and node_qat.target.startswith("activation_post_process")
+                assert node_ptq.target == node_qat.target
+
+                module_ptq = prepared_model_ptq.get_submodule(node_ptq.target)
+                module_qat = prepared_model_qat.get_submodule(node_qat.target)
+
+                if isinstance(module_ptq, _DerivedObserverOrFakeQuantize):
+                    continue
+
+                scale, zero_point = module_ptq.calculate_qparams()
+                min_val = module_ptq.min_val
+                max_val = module_ptq.max_val
+                if isinstance(module_ptq, HistogramObserver):
+                    min_val, max_val = module_ptq._non_linear_param_search()
+
+                module_qat.scale = scale
+                module_qat.zero_point = zero_point.type(torch.int32)
+                module_qat.activation_post_process.min_val = min_val
+                module_qat.activation_post_process.max_val = max_val

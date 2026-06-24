@@ -14,10 +14,7 @@ from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
 )
 
-from ultralytics.utils.ax_quantizer import(
-    ax_load_config,
-    AXQuantizer,
-)
+from ultralytics.utils.ax_quantizer import AXQuantizer
 
 from ultralytics.utils.quant_utils import simplify_and_fix_4bit_dtype
 import ultralytics.utils.quantized_decomposed_dequantize_per_channel
@@ -35,10 +32,8 @@ qat_weights = 'runs/detect/qat2/weights/last.pt'    # qat权重
 qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
 
 #---quantizer config---
-global_config, regional_configs = ax_load_config("./config.json")
-quantizer = AXQuantizer()
-quantizer.set_global(global_config)
-quantizer.set_regional(regional_configs)
+config_path = "./config.json"
+quantizer = AXQuantizer(config_path)
 
 #---export training model---
 float_model = model.model.to(device)

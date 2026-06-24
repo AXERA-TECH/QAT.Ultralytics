@@ -72,21 +72,21 @@ pulsar2 build --input runs/qat_slim.onnx --config ./compile/config_s.json --outp
 
 **注**：`qat-ax-infer` 里参考的是 `eval.py` 的流程，而不是 `test/predictor` 流程，性能和指标会略有差异。
 
-## 5. 常见问题
+## 6. 常见问题
 
-### 5.1 模型转换时，节点找不到
+### 6.1 模型转换时，节点找不到
 若报错某节点找不到，则说明配置文件不适用于当前图，需要参考 [2. 使用 Netron 检查节点](#section2) 进行查找 `S16` 节点：
 
 ![alt text](./assets/image-error.png)
 
-### 5.2 模型转换时，出现常量
+### 6.2 模型转换时，出现常量
 
 若遇到此问题，请先升级工具链版本。原因是：`Mul` 算子其中一个输入为常值，在`onnxt`被处理为标量，而不是一维 `tensor` 或 `array`。
 
 ![alt text](./assets/image-error-mul.png)
 
 
-### 5.3 模型转换时，缺少 `dequantize` 节点
+### 6.3 模型转换时，缺少 `dequantize` 节点
 
 此问题应被最新的`onnxscript`依赖修复。若报错如下，则按照 [README_nano.md](../README_nano.md) 重新安装 `onnxscript`。
 

@@ -54,7 +54,6 @@ compile/config_n.json   yolo11n模型
 - `MatMul` 节点使用 `S16`
 - `MatMul` 前的部分 `reshape`、`split`、`transpose` 节点也同步设置为 `S16`
 
-原因：QAT 时为了保证 `MatMul` 精度、避免上溢出等问题，把 `MatMul` 设置为了 `S16` 量化。
 
 ## 4. 转换命令
 

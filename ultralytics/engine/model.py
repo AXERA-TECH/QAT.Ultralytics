@@ -41,10 +41,7 @@ from torch.ao.quantization.quantize_pt2e import (
 #     AXQuantizer,
 #     get_quantization_config,
 # )
-from ultralytics.utils.ax_quantizer import(
-    ax_load_config,
-    AXQuantizer,
-)
+from ultralytics.utils.ax_quantizer import AXQuantizer
 from ultralytics.utils.train_utils import (
     load_model,
     train_one_epoch,
@@ -869,28 +866,28 @@ class Model(torch.nn.Module):
         # print(f'device {device}')
         # print(f'RANK {RANK}')
         if RANK in [-1, 0]:
-            inputs = torch.rand(2, 3, inp_h, inp_w).to(device)
-            print(f'export onnx input shape: {inputs.shape}')
-            onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=True)
-            onnx_program.optimize()
-            onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
-            torch.onnx.export(
-                self.model,
-                inputs,
-                f"{path_parent}/{file_name}_float.onnx",
-                opset_version=18
-            )
-            onnx_model = onnx.load(f"{path_parent}/{file_name}_float.onnx")
-            model_simp, check = simplify(onnx_model)
-            assert check, "Simplified ONNX model could not be validated"
-            onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
-
+            try:
+                inputs = torch.rand(2, 3, inp_h, inp_w).to(device)
+                print(f'export onnx input shape: {inputs.shape}')
+                onnx_program = torch.onnx.export(self.model, (inputs,), dynamo=False)
+                onnx_program.optimize()
+                onnx_program.save(f"{path_parent}/{file_name}_dynamo_float.onnx")
+                torch.onnx.export(
+                    self.model,
+                    inputs,
+                    f"{path_parent}/{file_name}_float.onnx",
+                    opset_version=18
+                )
+                onnx_model = onnx.load(f"{path_parent}/{file_name}_float.onnx")
+                model_simp, check = simplify(onnx_model)
+                assert check, "Simplified ONNX model could not be validated"
+                onnx.save(model_simp, f"{path_parent}/{file_name}_float_sim.onnx")
+            except Exception as e:
+                LOGGER.warning(' export onnx error!')
         # quantizer
         config_path = "./config.json"
-        global_config, regional_configs = ax_load_config(config_path)
-        quantizer = AXQuantizer()
-        quantizer.set_global(global_config)
-        quantizer.set_regional(regional_configs)
+        quantizer = AXQuantizer(config_path)
+
         self.model = self.model.to(self.device)
         inputs = torch.rand(2, 3, inp_h, inp_w).to(self.device)
         dynamic_shapes = {

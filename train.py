@@ -1,13 +1,12 @@
 from ultralytics import YOLO
-
+# build from YAML and transfer weights
 model = YOLO("yolo11n.yaml")
-model.load("yolo11n.pt")  # build from YAML and transfer weights
+model.load("yolo11n.pt")
 
-# Best 10-epoch QAT debug group (fixed to GPU 3).
 results = model.train(
     data="coco.yaml",
     batch=64,
-    epochs=10,
+    epochs=10,                  # 可适当增加轮次
     imgsz=640,
     qat_onnx_imgsz=[640, 640],
     device=0,
@@ -17,5 +16,5 @@ results = model.train(
     qat_onnx_sp="runs/last_checkpoint.onnx", # 训练完成后，导出的onnx
     lr0=0.00004,
     lrf=0.2,
-    # fraction=1,  # 可设0.01训练数据，进行流程测试
+    # fraction=1,  # 可设0.01, 使用1%的训练数据进行流程测试
 )

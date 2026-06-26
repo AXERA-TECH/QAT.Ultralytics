@@ -1,5 +1,7 @@
 # nano模型的训练环境安装
 
+**注：该问题已被官方修复，此文档只作为记录，不作为操作文档。若遇到部署问题，请先升级工具链版本。**
+
 ### 1.1 安装基础环境
 ```
 pip install -r requirements-nano.txt
@@ -41,7 +43,7 @@ pip install -e .
 ### 1.3 其他
 
 #### 1.3.1 官方修复
-此问题在后续版本有修复，[[ONNX] Optimize should not fold DequantizeLinear](https://github.com/pytorch/pytorch/issues/177611)，但目前尚未测试新版本 `onnxscript`，所以仍采用这种方式安装。
+此问题在后续版本有修复，[[ONNX] Optimize should not fold DequantizeLinear](https://github.com/pytorch/pytorch/issues/177611)，当前依赖已更新包含此问题的更新。
 
 <span id="section1.3.2"></span>
 #### 1.3.2 Conv2d算子示例

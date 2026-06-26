@@ -43,10 +43,7 @@ from ultralytics.utils.checks import check_imgsz
 from ultralytics.utils.ops import Profile
 from ultralytics.utils.torch_utils import de_parallel, select_device, smart_inference_mode
 
-from ultralytics.utils.ax_quantizer import(
-    ax_load_config,
-    AXQuantizer,
-)
+from ultralytics.utils.ax_quantizer import AXQuantizer
 
 class BaseValidator:
     """
@@ -247,10 +244,8 @@ class BaseValidator:
             float_model = DetectionModel(model.yaml, nc=model.yaml['nc'], verbose=True and RANK == -1)
             float_model.load(model)
             # quantizer
-            global_config, regional_configs = ax_load_config("./config.json")
-            quantizer = AXQuantizer()
-            quantizer.set_global(global_config) 
-            quantizer.set_regional(regional_configs)
+            config_path = "./config.json"
+            quantizer = AXQuantizer(config_path)
             # float_model.train()
             float_model = float_model.to(self.device)
             inp_h, inp_w = self.args.get('qat_onnx_imgsz', [640, 640])

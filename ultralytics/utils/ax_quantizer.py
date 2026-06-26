@@ -72,8 +72,6 @@ class QuantConf:
     input_dtype: DtypeConf = None
     weight_dtype: DtypeConf = None
     output_dtype: DtypeConf = None
-    act_observer: str | None = None
-    weight_observer: str | None = None
 
 
 @dataclasses.dataclass
@@ -83,59 +81,6 @@ class QuantizerRegionalConf:
     module_config: QuantizationConfig = None
 
 
-def _build_act_fake_quant(
-    observer_name: str,
-    is_qat: bool,
-    is_dynamic: bool,
-) -> tuple[type[ObserverOrFakeQuantize], Dict[str, Any]]:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-    if is_qat:
-        if is_dynamic:
-            extra_args["observer"] = MovingAverageMinMaxObserver.with_args(averaging_constant=1)
-            return FakeQuantize, extra_args
-        if observer_name in {"moving_avg", "default", "moving_average_minmax"}:
-            extra_args["observer"] = MovingAverageMinMaxObserver
-            return FusedMovingAvgObsFakeQuantize, extra_args
-        if observer_name == "minmax":
-            extra_args["observer"] = MinMaxObserver
-            return FakeQuantize, extra_args
-        if observer_name == "histogram":
-            extra_args["observer"] = HistogramObserver
-            return FakeQuantize, extra_args
-        raise ValueError(f"Unsupported activation observer: {observer_name}")
-
-    if is_dynamic:
-        return PlaceholderObserver, extra_args
-
-    extra_args["observer"] = HistogramObserver
-    return FakeQuantize, extra_args
-
-
-def _build_weight_fake_quant(
-    observer_name: str,
-    is_qat: bool,
-    ch_axis: int,
-) -> tuple[type[ObserverOrFakeQuantize], Dict[str, Any]]:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-    if is_qat:
-        if observer_name in {"moving_avg_per_channel", "default"}:
-            extra_args["observer"] = MovingAveragePerChannelMinMaxObserver.with_args(ch_axis=ch_axis)
-            return FusedMovingAvgObsFakeQuantize, extra_args
-        if observer_name in {"per_channel", "per_channel_minmax"}:
-            extra_args["observer"] = PerChannelMinMaxObserver.with_args(ch_axis=ch_axis)
-            return FakeQuantize, extra_args
-        if observer_name in {"moving_avg", "moving_average_minmax"}:
-            extra_args["observer"] = MovingAverageMinMaxObserver
-            return FusedMovingAvgObsFakeQuantize, extra_args
-        if observer_name == "minmax":
-            extra_args["observer"] = MinMaxObserver
-            return FakeQuantize, extra_args
-        raise ValueError(f"Unsupported weight observer: {observer_name}")
-
-    extra_args["observer"] = PerChannelMinMaxObserver.with_args(ch_axis=ch_axis)
-    return FakeQuantize, extra_args
-
-
 # @functools.lru_cache
 def get_quantization_config(
     is_symmetric: bool = False,
@@ -143,16 +88,26 @@ def get_quantization_config(
     is_dynamic: bool = False,
     quant_config: QuantConf = None
 ):
-    act_observer_name = (quant_config.act_observer or "moving_avg").lower()
-    weight_observer_name = (quant_config.weight_observer or "moving_avg_per_channel").lower()
-
     # input
     act_qscheme = (
         torch.per_tensor_symmetric if is_symmetric else torch.per_tensor_affine
     )
-    act_observer_or_fake_quant_ctr, extra_args = _build_act_fake_quant(
-        act_observer_name, is_qat=is_qat, is_dynamic=is_dynamic
-    )
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    if is_qat:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = FakeQuantize
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
+                averaging_constant=1
+            )
+            extra_args["observer"] = dynamic_quant_observer
+        else:
+            act_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize  # type: ignore[assignment]
+    else:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = PlaceholderObserver  # type: ignore[assignment]
+        else:
+            act_observer_or_fake_quant_ctr = HistogramObserver  # type: ignore[assignment]
 
     input_dtype = quant_config.input_dtype
     if input_dtype is not None:
@@ -187,9 +142,22 @@ def get_quantization_config(
 
     # weight
     weight_qscheme = torch.per_channel_symmetric
-    weight_observer_or_fake_quant_ctr, extra_args = _build_weight_fake_quant(
-        weight_observer_name, is_qat=is_qat, ch_axis=0
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    if is_qat:
+        if weight_qscheme == torch.per_tensor_symmetric:
+            extra_args["observer"] = MovingAverageMinMaxObserver
+        else:
+            extra_args["observer"] = MovingAveragePerChannelMinMaxObserver  # type: ignore[dict-item]
+    
+    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+        MinMaxObserver
     )
+    if is_qat:
+        # TODO: qat + per channel?
+        weight_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize
+    else:
+        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+
     weight_dtype = quant_config.weight_dtype
     if weight_dtype is not None:
         weight_quantization_spec = QuantizationSpec(
@@ -208,9 +176,21 @@ def get_quantization_config(
 
     # convtranspose weight
     weight_qscheme = torch.per_channel_symmetric
-    weight_observer_or_fake_quant_ctr, extra_args = _build_weight_fake_quant(
-        weight_observer_name, is_qat=is_qat, ch_axis=1
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    if is_qat:
+        if weight_qscheme == torch.per_tensor_symmetric:
+            extra_args["observer"] = MovingAverageMinMaxObserver
+        else:
+            extra_args["observer"] = MovingAveragePerChannelMinMaxObserver.with_args(ch_axis=1)  # type: ignore[dict-item]
+    
+    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
+        MinMaxObserver
     )
+    if is_qat:
+        # TODO: qat + per channel?
+        weight_observer_or_fake_quant_ctr = FakeQuantize
+    else:
+        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
 
     weight_dtype = quant_config.weight_dtype
     if weight_dtype is not None:
@@ -255,8 +235,6 @@ def get_quantization_config(
 
 def get_config(config: Dict[str, Any]):
     is_symmetric = config["is_symmetric"]
-    act_observer = config.get("act_observer", "moving_avg")
-    weight_observer = config.get("weight_observer", "moving_avg_per_channel")
     if config["input"]["dtype"] == "FP32":
         quant_config = QuantConf()
     else:
@@ -278,9 +256,7 @@ def get_config(config: Dict[str, Any]):
         quant_config = QuantConf(
             input_dtype=input_dtype,
             weight_dtype=weight_dtype,
-            output_dtype=input_dtype,
-            act_observer=act_observer,
-            weight_observer=weight_observer,
+            output_dtype=input_dtype
         )
     return is_symmetric, quant_config
 
@@ -382,6 +358,7 @@ class AXQuantizer(Quantizer):
         "conv",  # conv, conv_relu, conv_bn, conv_bn_relu
         "convtranspose",  # conv_transpose_relu, conv_transpose_bn, conv_transpose_bn_relu
         "layernorm",
+        "leakyrelu",
         "linear",  # linear, linaer_relu
         "matmul",
         "mul",  # mul, mul_relu
@@ -389,22 +366,31 @@ class AXQuantizer(Quantizer):
         "glu",
         "gridsample",
         "groupnorm",
+        "sigmoid",
         "silu",
         "softmax",
+        "sub",
         "split",
     ]
 
-    def __init__(self, annotate_bias: bool = True) -> None:
+    def __init__(self, config_file: str, is_qat: bool = True, annotate_bias: bool = True) -> None:
         super().__init__()
         self._annotate_bias = annotate_bias
 
-        # init global
-        self.global_config: Optional[QuantizationConfig] = None
-        # init regional
-        self.regional_configs: List[QuantizerRegionalConf] = []
-        self.init_regional()
+        # init config
+        self.init_global()
+        self.init_regional(is_qat)
+        
+        # set config
+        global_config, regional_configs = ax_load_config(config_file=config_file, is_qat=is_qat)
+        self.set_global(global_config)
+        self.set_regional(regional_configs)
 
-    def init_regional(self):
+    def init_global(self):
+        self.global_config: Optional[QuantizationConfig] = None
+    
+    def init_regional(self, is_qat: bool):
+        self.regional_configs: List[QuantizerRegionalConf] = []
         # matlul
         regional_matmul = {
             "module_names": None,
@@ -413,12 +399,12 @@ class AXQuantizer(Quantizer):
                 "is_symmetric": True,
                 "input": {
                     "dtype": "S16",
-                    "qmin": -32767,
+                    "qmin": -32768,
                     "qmax": 32767
                 },
             }
         }
-        regional_matmul_config = load_regional_config(regional_matmul)
+        regional_matmul_config = load_regional_config(regional_matmul, is_qat)
         self.regional_configs.append(regional_matmul_config)
         # gridsample
         regional_gridsample = {
@@ -428,12 +414,12 @@ class AXQuantizer(Quantizer):
                 "is_symmetric": True,
                 "input": {
                     "dtype": "S16",
-                    "qmin": -32767,
+                    "qmin": -32768,
                     "qmax": 32767
                 },
             }
         }
-        regional_gridsample_config = load_regional_config(regional_gridsample)
+        regional_gridsample_config = load_regional_config(regional_gridsample, is_qat)
         self.regional_configs.append(regional_gridsample_config)
         return self
         
@@ -475,3 +461,4 @@ class AXQuantizer(Quantizer):
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         pass
+

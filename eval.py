@@ -7,7 +7,7 @@ model.load("yolo11n.pt")  # build from YAML and transfer weights
 # Validate the model
 metrics = model.val(data="coco.yaml",                                   # 数据集
                     batch=32,
-                    qat_pt_path="./runs/detect/qat/weights/last.pt",    # 评估qat模型路径
+                    qat_pt_path="./runs/detect/qat/weights/best.pt",    # 评估qat模型路径
                     qat_onnx_imgsz=[640, 640],                          # 评估时的shape, [h, w]
                     device=0,
                     )

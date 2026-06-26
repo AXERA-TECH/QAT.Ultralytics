@@ -1,6 +1,8 @@
 # QAT.Ultralytics
 
-本仓库基于 Ultralytics，用于调试和验证 YOLO11 系列模型的 QAT（Quantization Aware Training）训练、导出与部署转换流程。
+本仓库基于 [Ultralytics-8.3](https://github.com/ultralytics/ultralytics/tree/v8.3.104)，用于调试和验证 `YOLO11` 系列模型的 QAT（Quantization Aware Training）训练、导出与部署转换流程。
+
+**使用建议：** 先确认 `qat` 到部署流程畅通。使用 `train.py` 配置小批量数据，训练 `1 epoch`；使用 `eval.py` 确认精度符合训练时的评估精度；使用`export.py` 导出 `qat_slim.onnx`；按照 [qat_deployment.md](./compile/qat_deployment.md) 进行 `axmodel` 导出。
 
 ## 精度参考
 
@@ -11,43 +13,13 @@
 | yolov11n-fp32 | 0.394 | 0.553 |
 | yolov11n_8w8f_qdq.onnx | 0.386 | 0.546 |
 
-## 环境要求
-
-安装依赖：
+## 安装依赖
 
 ```bash
 cd QAT.Ultralytics
 pip install -r requirements.txt
 pip install -e .
 ```
-下载 `onnxscript 0.4.0` 的源码
-``` 
-https://github.com/microsoft/onnxscript/archive/refs/tags/v0.4.0.zip
-或
-https://github.com/microsoft/onnxscript/archive/refs/tags/v0.4.0.tar.gz
-```
-解压文件并进入文件目录，调整源码。
-```
-cd onnxscript/optimizer
-```
-修改 `_optimizer.py` 中 `input_size_limit` 为 `0`。
-
-![alt text](./assets/image-onnxscript.png)
-
-安装 `onnxscript`。
-``` shell
-# onnxscript目录下
-pip install -r requirements-dev.txt
-pip install -e .
-```
-详情可以阅读 [README_nano.md](./README_nano.md)。
-
-版本约束：
-
-- `pytorch==2.6`
-- `onnxruntime==1.21.0`
-- `onnxscript==0.4.0`
-
 
 ## 快速开始
 

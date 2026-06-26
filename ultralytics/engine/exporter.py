@@ -1301,17 +1301,12 @@ class Exporter:
         # print(self.file)
         print(type(self.model))
         # f = str(self.file.with_suffix("_qat_slim.onnx"))
-        from ultralytics.utils.ax_quantizer import(
-            ax_load_config,
-            AXQuantizer,
-        )
+        from ultralytics.utils.ax_quantizer import AXQuantizer
         from onnxslim import slim
         from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
         # quantizer
-        global_config, regional_configs = ax_load_config("./config.json")
-        quantizer = AXQuantizer()
-        quantizer.set_global(global_config) 
-        quantizer.set_regional(regional_configs)
+        config_path = "./config.json"
+        quantizer = AXQuantizer(config_path)
         # print(f'self.args {self.args}')
         device = 'cuda'
         # float_model = self.model.train().to(device)

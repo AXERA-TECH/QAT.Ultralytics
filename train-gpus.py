@@ -7,7 +7,7 @@ model.load("yolo11n.pt")  # build from YAML and transfer weights
 results = model.train(
     data="coco.yaml",
     batch=128,
-    epochs=12,
+    epochs=12,                  # 可适当增加轮次
     imgsz=640,
     qat_onnx_imgsz=[640, 640],
     device=[0,1],
@@ -17,7 +17,7 @@ results = model.train(
     qat_onnx_sp="runs/last_checkpoint.onnx", # 训练完成后，导出的onnx
     lr0=0.00003,
     lrf=0.1,
-    # fraction=1,  # 可设0.01训练数据，进行流程测试
+    # fraction=1,  # 可设0.01, 使用1%的训练数据进行流程测试
 )
 
 # python -m torch.distributed.run --nproc_per_node 2 train-gpus.py

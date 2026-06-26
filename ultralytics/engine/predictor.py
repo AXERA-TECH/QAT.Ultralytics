@@ -50,10 +50,7 @@ from ultralytics.utils.checks import check_imgsz, check_imshow
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import select_device, smart_inference_mode
 
-from ultralytics.utils.ax_quantizer import(
-    ax_load_config,
-    AXQuantizer,
-)
+from ultralytics.utils.ax_quantizer import AXQuantizer
 
 STREAM_WARNING = """
 inference results will accumulate in RAM unless `stream=True` is passed, causing potential out-of-memory
@@ -342,10 +339,8 @@ class BasePredictor:
                     float_model = DetectionModel(self.model.model.yaml, nc=80, verbose=True and RANK == -1)
                     float_model.load(self.model.model)
                     # quantizer
-                    global_config, regional_configs = ax_load_config("./config.json")
-                    quantizer = AXQuantizer()
-                    quantizer.set_global(global_config) 
-                    quantizer.set_regional(regional_configs)
+                    config_path = "./config.json"
+                    quantizer = AXQuantizer(config_path)
                     # float_model.train()
                     float_model = float_model.to("cuda")
                     

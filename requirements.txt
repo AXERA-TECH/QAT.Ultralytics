@@ -1,11 +1,11 @@
 torch==2.6.0  # see https://pytorch.org/get-started/locally (recommended)
 torchvision>=0.9.0
-onnx<1.20
+onnx==1.19.1
 onnxruntime==1.21.0
 onnxruntime-gpu==1.21.0
-onnxscript==0.4.0
+onnxscript==0.6.2
 onnxslim==0.1.48
-onnx-ir<=0.1.15
+onnx-ir==0.1.15
 # ultralytics==8.3.104
 onnx-simplifier
 onnx_graphsurgeon

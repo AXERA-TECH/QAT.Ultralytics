@@ -7,7 +7,7 @@ model.load("yolo11n.pt")  # build from YAML and transfer weights
 results = model.train(
     data="coco.yaml",
     batch=128,
-    epochs=12,
+    epochs=12,                  # 可适当增加轮次
     imgsz=640,
     qat_onnx_imgsz=[640, 640],
     device=[0,1],

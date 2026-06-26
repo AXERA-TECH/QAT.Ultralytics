@@ -16,5 +16,5 @@ results = model.train(
     qat_onnx_sp="runs/last_checkpoint.onnx", # 训练完成后，导出的onnx
     lr0=0.00004,
     lrf=0.2,
-    fraction=0.01,  # 可设0.01, 使用1%的训练数据进行流程测试
+    # fraction=1,  # 可设0.01, 使用1%的训练数据进行流程测试
 )

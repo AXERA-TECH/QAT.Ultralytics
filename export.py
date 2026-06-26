@@ -25,11 +25,11 @@ import torch
 model = YOLO("yolo11n.yaml")
 
 #---export config---
-qat_onnx_imgsz = [1, 3, 640, 640] # 推理模型输入大小
+qat_onnx_imgsz = [1, 3, 640, 640]                   # 推理模型输入大小
 device = 'cuda'             # 
-qat_onnx_sp = './qat.onnx'  # 保存路径，最终会导出 qat_slim.onnx
-qat_weights = 'runs/detect/qat2/weights/last.pt'    # qat权重
-qat_weight_dict_sp = './qat.pth' # 保存qat权重路径 
+qat_onnx_sp = './qat.onnx'                          # 保存路径，最终会导出 qat_slim.onnx
+qat_weights = './runs/detect/qat/weights/best.pt'   # qat权重
+qat_weight_dict_sp = './qat.pth'                    # 保存qat权重路径 
 
 #---quantizer config---
 config_path = "./config.json"

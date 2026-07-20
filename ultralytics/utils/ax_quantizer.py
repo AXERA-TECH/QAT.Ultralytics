@@ -11,12 +11,12 @@ import torch
 import torch._dynamo as torchdynamo
 import torch.nn.functional as F
 from torch import Tensor
-from torch.ao.quantization.fake_quantize import (
+from ._compat import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization import observer, ObserverOrFakeQuantize
-from torch.ao.quantization.observer import (
+from ._compat import observer, ObserverOrFakeQuantize
+from ._compat import (
     HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
@@ -24,9 +24,9 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer, DerivedQuantizationSpec
-from torch.ao.quantization.quantizer.utils import _get_module_name_filter
-from ultralytics.utils.ax_quantizer_utils import (
+from ._compat import QuantizationSpec, Quantizer, DerivedQuantizationSpec
+from ._compat import _get_module_name_filter
+from .ax_quantizer_utils import (
     _convert_scalars_to_attrs,
     OP_TO_ANNOTATOR,
     OperatorConfig,
@@ -280,7 +280,7 @@ def load_regional_config(regional_config: Dict[str, str], is_qat: bool = True):
     return regional_quantization_config
 
 
-def ax_load_config(config_file: str, is_qat: bool = True):
+def load_config(config_file: str, is_qat: bool = True):
 
     with open(config_file, 'r') as f:
         config = json.load(f)
@@ -299,13 +299,30 @@ def ax_load_config(config_file: str, is_qat: bool = True):
     return global_quantization_config, regional_quantization_configs
 
 
+def _is_bn_num_batches_tracked_source(node: torch.fx.Node) -> bool:
+    """穿透链式 add_ 追到底部,校验源头是 BN 的 num_batches_tracked buffer。
+
+    2.6 版靠 node.meta["source_fn_stack"] 判断节点来自 BatchNorm2d;2.10 的
+    export 图不再携带该元数据 → 改按 buffer 名识别(num_batches_tracked 是
+    BN 专有 buffer,判定等价)。
+    """
+    while (
+        node.op == "call_function"
+        and node.target == torch.ops.aten.add_.Tensor
+    ):
+        node = node.args[0]
+    return node.op == "get_attr" and "num_batches_tracked" in str(node.target)
+
+
 def remove_reused_bn_param_hack(model: torch.fx.GraphModule):
+    # 复用 BN(同一 BN 在一次 forward 中被循环展开多次)时,export 图里
+    # num_batches_tracked 的自增会链式堆叠 add_(add_(buffer,1),1);
+    # 把后续 add_ 改接原始 buffer,保持各展开点读到一致的计数
     for node in model.graph.nodes:
         if (
             node.target == torch.ops.aten.add_.Tensor
             and node.args[1] == 1
-            and torch.nn.modules.batchnorm.BatchNorm2d
-            in [val[1] for val in node.meta["source_fn_stack"]]
+            and _is_bn_num_batches_tracked_source(node.args[0])
         ):
             last_node = node.args[0]
             if last_node.op != "get_attr":
@@ -314,8 +331,6 @@ def remove_reused_bn_param_hack(model: torch.fx.GraphModule):
                     and last_node.op == "call_function"
                     and last_node.args[0].op == "get_attr"
                     and last_node.args[1] == 1
-                    and torch.nn.modules.batchnorm.BatchNorm2d
-                    in [val[1] for val in last_node.meta["source_fn_stack"]]
                 )
                 node.args = (last_node.args[0], node.args[1])
 
@@ -382,7 +397,7 @@ class AXQuantizer(Quantizer):
         self.init_regional(is_qat)
         
         # set config
-        global_config, regional_configs = ax_load_config(config_file=config_file, is_qat=is_qat)
+        global_config, regional_configs = load_config(config_file=config_file, is_qat=is_qat)
         self.set_global(global_config)
         self.set_regional(regional_configs)
 
@@ -399,7 +414,7 @@ class AXQuantizer(Quantizer):
                 "is_symmetric": True,
                 "input": {
                     "dtype": "S16",
-                    "qmin": -32768,
+                    "qmin": -32767,
                     "qmax": 32767
                 },
             }
@@ -414,7 +429,7 @@ class AXQuantizer(Quantizer):
                 "is_symmetric": True,
                 "input": {
                     "dtype": "S16",
-                    "qmin": -32768,
+                    "qmin": -32767,
                     "qmax": 32767
                 },
             }

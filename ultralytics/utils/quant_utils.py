@@ -5,8 +5,28 @@ import onnx_graphsurgeon as gs
 
 from onnxslim import slim
 from onnxruntime.quantization.quant_utils import pack_bytes_to_4bit
-from torch.ao.quantization import _DerivedObserverOrFakeQuantize
-from torch.ao.quantization.observer import HistogramObserver
+from ._compat import _DerivedObserverOrFakeQuantize
+from ._compat import HistogramObserver
+
+
+def _castlike_to_cast(onnx_model):
+    """CastLike(x, like) 的 like 是运行时张量时无法被常量折叠(FP32 区域 conv 的
+    零 bias 会以 Expand(CastLike(标量)) 形式残留);本管线中 like 一律是 float
+    激活,借 shape_inference 推断目标类型后改写成显式 Cast,让后续
+    fold_constants 能把整条链折成常量(与 2.6 optimize() 的产物对齐)。"""
+    if not any(n.op_type == "CastLike" for n in onnx_model.graph.node):
+        return
+    inferred = onnx.shape_inference.infer_shapes(onnx_model)
+    vi_dtype = {v.name: v.type.tensor_type.elem_type
+                for v in list(inferred.graph.value_info)
+                + list(inferred.graph.input) + list(inferred.graph.output)}
+    for node in onnx_model.graph.node:
+        if node.op_type != "CastLike":
+            continue
+        target = vi_dtype.get(node.input[1], onnx.TensorProto.FLOAT)
+        node.op_type = "Cast"
+        del node.input[1]
+        node.attribute.append(onnx.helper.make_attribute("to", target))
 
 
 def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
@@ -23,6 +43,7 @@ def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
     """
     # load
     onnx_model = onnx.load(qat_path)
+    _castlike_to_cast(onnx_model)
 
     # 4bit info
     tensors_4bit = {}
@@ -33,12 +54,20 @@ def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
         metadata_props = {}
         for metadata_prop in node.metadata_props:
             metadata_props.update({metadata_prop.key: metadata_prop.value})
-        namespace = metadata_props.get("namespace", None)
         fx_node = metadata_props.get("pkg.torch.onnx.fx_node", None)
-        if not namespace or not fx_node:
+        if not fx_node:
             continue
 
-        target = namespace.split(": ")[1]
+        # 双格式兼容:2.10 的 namespace 格式已变(…Wrapper/quantize_per_tensor),
+        # 优先从 fx_node 提取完整 target;2.6 老格式回退 namespace 第二段
+        target_match = re.search(r"target=torch\.ops\.(quantized_decomposed\.\w+\.\w+)", fx_node)
+        if target_match:
+            target = target_match.group(1)
+        else:
+            namespace = metadata_props.get("namespace", "")
+            target = namespace.split(": ")[1] if ": " in namespace else ""
+            if not target.startswith("quantized_decomposed."):
+                continue
         node_args = re.findall(r"args\s*=\s*\(([^)]+)\)", fx_node)[0].split(", ")
 
         if target == "quantized_decomposed.quantize_per_tensor.default":
@@ -94,6 +123,9 @@ def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
             vis[name].type.tensor_type.elem_type = dtype
 
     # save
+    # gs/slim 的 make_model 会按当前 onnx 库默认值盖章 ir_version(1.19 时代=12),
+    # ORT 1.23(max 11)与老 pulsar2 会拒载;回写成 dynamo 导出的 10
+    sim_model.ir_version = 10
     onnx.save(sim_model, sim_path)
     print(f"save onnx model to [{sim_path}] Successfully!")
 

@@ -335,7 +335,7 @@ class BasePredictor:
 
                     from ultralytics.nn.tasks import DetectionModel
                     from ultralytics.utils import RANK
-                    from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
+                    from ultralytics.utils._compat import prepare_qat_pt2e, convert_pt2e, move_exported_model_to_eval, capture_for_training
                     float_model = DetectionModel(self.model.model.yaml, nc=80, verbose=True and RANK == -1)
                     float_model.load(self.model.model)
                     # quantizer
@@ -351,7 +351,7 @@ class BasePredictor:
                     dynamic_shapes = {
                         "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
                     }
-                    exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
+                    exported_model = capture_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
                     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
                     prepared_model.load_state_dict(torch.load(qat_pt_path)['qat_model'])
                     quantized_model = convert_pt2e(prepared_model)
@@ -359,7 +359,7 @@ class BasePredictor:
                     import copy
                     qat_model = copy.deepcopy(quantized_model)
                     if isinstance(qat_model, torch.fx.graph_module.GraphModule):
-                        torch.ao.quantization.move_exported_model_to_eval(qat_model)
+                        move_exported_model_to_eval(qat_model)
                     qat_preds = qat_model(im)
                     det_id = list(self.model.model.model._modules.keys())[-1]
                     if isinstance(qat_preds, dict):

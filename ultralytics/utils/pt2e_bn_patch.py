@@ -46,8 +46,14 @@ def patch_pt2e_batchnorm_handling() -> bool:
     significantly after calling `move_exported_model_to_eval()` or `allow_exported_model_train_eval()`.
     """
     try:
-        from torch.ao.quantization.pt2e import export_utils, qat_utils
-        from torch.ao.quantization.pt2e.export_utils import _WrapperModule
+        from ultralytics.utils._compat import IS_TORCH_210
+        if IS_TORCH_210:
+            # torch 2.10:PT2E 已迁 torchao,BN 折叠走 torchao 的 export_utils/qat_utils
+            from torchao.quantization.pt2e import export_utils, qat_utils
+            from torchao.quantization.pt2e.export_utils import WrapperModule as _WrapperModule
+        else:
+            from torch.ao.quantization.pt2e import export_utils, qat_utils
+            from torch.ao.quantization.pt2e.export_utils import _WrapperModule
     except Exception:
         return False
 

@@ -9,9 +9,12 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
     get_symmetric_quantization_config,
 )
-from torch.ao.quantization.quantize_pt2e import (
+from ultralytics.utils._compat import (
     prepare_qat_pt2e,
     convert_pt2e,
+    move_exported_model_to_eval,
+    allow_exported_model_train_eval,
+    capture_for_training,
 )
 
 from ultralytics.utils.ax_quantizer import AXQuantizer
@@ -40,16 +43,16 @@ float_model = model.model.to(device)
 inputs = torch.rand(*qat_onnx_imgsz).to(device)
 dynamic_shapes = None
 print('start export!')
-exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes)
+exported_model = capture_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes)
 print('export training model done!')
 exported_module = exported_model.module()
-# torch.ao.quantization.move_exported_model_to_eval(exported_module)
+# move_exported_model_to_eval(exported_module)
 
 #---export quantized model---
 prepared_model = prepare_qat_pt2e(exported_module, quantizer)
 print('prepared model done!') 
-torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+move_exported_model_to_eval(prepared_model)
+allow_exported_model_train_eval(prepared_model)
 # print(f'prepared_model {prepared_model}')
 
 #---load and save qat weights---
@@ -64,7 +67,7 @@ quantized_model = convert_pt2e(prepared_model)
 
 print('convert_pt2e done!')
 onnx_program = torch.onnx.export(quantized_model, (inputs.to(device),), dynamo=True, opset_version=21)
-onnx_program.optimize()
+# onnx_program.optimize()  # torch2.10:optimize 折叠权重 DQ / 污染混合 4bit,保持 optimize=False
 onnx_program.save(qat_onnx_sp)
 print(f'export qat model to [{qat_onnx_sp}] done!')
 

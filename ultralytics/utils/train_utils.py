@@ -5,7 +5,11 @@ import logging
 import numpy as np
 import onnxruntime as ort
 
+import copy
+
 import torch
+
+from ._compat import IS_TORCH_210
 
 import torchvision
 from torchvision import datasets
@@ -45,23 +49,46 @@ def cifar10_data_loaders(data_path, train_batch_size = 32, eval_batch_size = 32)
     return data_loader, data_loader_test
 
 
-def imagenet_data_loaders(data_path, train_batch_size = 32):
+def imagenet_data_loaders(
+    data_path,
+    train_batch_size = 32,
+    fake_data = False,
+    fake_train_size = 1024,
+    fake_val_size = 128,
+):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-    dataset = torchvision.datasets.ImageNet(
-        data_path, split="train", transform=transforms.Compose([
+    train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
-        ]))
-    dataset_test = torchvision.datasets.ImageNet(
-        data_path, split="val", transform=transforms.Compose([
+        ])
+    val_transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
-        ]))
+        ])
+
+    if fake_data:
+        dataset = torchvision.datasets.FakeData(
+            size=fake_train_size,
+            image_size=(3, 224, 224),
+            num_classes=1000,
+            transform=train_transform,
+        )
+        dataset_test = torchvision.datasets.FakeData(
+            size=fake_val_size,
+            image_size=(3, 224, 224),
+            num_classes=1000,
+            transform=val_transform,
+        )
+    else:
+        dataset = torchvision.datasets.ImageNet(
+            data_path, split="train", transform=train_transform)
+        dataset_test = torchvision.datasets.ImageNet(
+            data_path, split="val", transform=val_transform)
 
     train_sampler = torch.utils.data.RandomSampler(dataset)
     test_sampler = torch.utils.data.SequentialSampler(dataset_test)
@@ -137,7 +164,8 @@ def evaluate_np(sess, data_loader_test, total_size=None):
         image = image.numpy()
         target = target.numpy()
         if isinstance(sess, ort.InferenceSession):
-            output = sess.run(None, {"x_0": image})[0]
+            # 2.6 导出输入名固定 x_0,2.10 可能不同,动态取
+            output = sess.run(None, {sess.get_inputs()[0].name: image})[0]
         elif inspect.isfunction(sess):
             output = sess(image)
         else:
@@ -170,7 +198,8 @@ def evaluate_np(sess, data_loader_test, total_size=None):
 def evaluate(model, data_loader_test, total_size=None):
     _logger = logging.getLogger("resnet:")
     if isinstance(model, torch.fx.graph_module.GraphModule):
-        torch.ao.quantization.move_exported_model_to_eval(model)
+        from ._compat import move_exported_model_to_eval
+        move_exported_model_to_eval(model)
 
     device = torch.device("cuda")
     top1 = AverageMeter()
@@ -254,16 +283,50 @@ def train_one_epoch(model, criterion, optimizer, data_loader, device, ntrain_bat
         #           .format(top1=top1, top5=top5))
             return
 
-    print('Full imagenet train set:  * Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f}'
+    # 2.6 原版此处写的 top1.global_avg 是不存在的属性(真 ImageNet 从未跑完
+    # 整个 epoch 故未触发);fake 小数据集会走到这行,修为 avg
+    print('Full train set:  * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
           .format(top1=top1, top5=top5))
     return
 
 
 def dynamo_export(model, inputs, onnx_path):
-    onnx_program = torch.onnx.export(model, inputs, output_names=['output'], dynamo=True, opset_version=21)
-    onnx_program.optimize()
+    if not IS_TORCH_210:
+        # 2.6:onnxscript 0.4.x 的 optimize 不折 QDQ,保持原管线行为
+        onnx_program = torch.onnx.export(model, inputs, output_names=['output'], dynamo=True, opset_version=21)
+        onnx_program.optimize()
+        onnx_program.save(onnx_path)
+        print(f"save onnx model to [{onnx_path}] Successfully!")
+        return
+
+    # 2.10:optimize 的常量折叠会把「int8 权重 + DequantizeLinear」折成 float
+    # 权重(量化信息全丢),必须关掉;折叠交给下游 gs.fold_constants + slim(不折 QDQ)
+    onnx_program = torch.onnx.export(model, inputs, output_names=['output'], dynamo=True, opset_version=21, optimize=False)
     onnx_program.save(onnx_path)
+
+    # optimize=False 时函数型 torchlib 算子(如 hardtanh/relu6)会以未内联的
+    # 本地函数节点(pkg.onnxscript.torch_lib 域)残留,onnxslim 不做函数内联,
+    # pulsar2 不认识 ONNX functions → 单独做内联(不触发 QDQ 常量折叠)
+    m = onnx.load(onnx_path)
+    if len(m.functions):
+        from onnx import inliner
+        m = inliner.inline_local_functions(m)
+        # 清掉不再被任何节点引用的自定义域声明(内联后 torch_lib 域通常已空)
+        used = {n.domain for n in m.graph.node} | {""}
+        kept = [o for o in m.opset_import if (o.domain or "") in used]
+        del m.opset_import[:]
+        m.opset_import.extend(kept)
+        onnx.save(m, onnx_path)
     print(f"save onnx model to [{onnx_path}] Successfully!")
+
+
+def export_float_reference(model, inputs, onnx_path):
+    """导出浮点参考模型:内置 eval 深拷贝。
+
+    2.10 的 dynamo 导出不再容忍训练态 BN 的 buffer 突变
+    (报 Key 'b_..._running_mean' does not match ...),统一 eval 副本导出;
+    原模型状态不受影响,可继续用于 QAT 捕获。"""
+    dynamo_export(copy.deepcopy(model).eval(), inputs, onnx_path)
 
 
 def onnx_simplify(onnx_path, sim_path):
@@ -271,5 +334,8 @@ def onnx_simplify(onnx_path, sim_path):
 
     model = onnx.load(onnx_path)
     model_simp = slim(model)
+    # slim 的 make_model 会按当前 onnx 库默认值盖章 ir_version(1.19 时代=12),
+    # ORT 1.23/老 pulsar2 拒载;回写成 dynamo 导出的 10(与 quant_utils 同理)
+    model_simp.ir_version = 10
     onnx.save(model_simp, sim_path)
     print(f"save onnx model to [{sim_path}] Successfully!")

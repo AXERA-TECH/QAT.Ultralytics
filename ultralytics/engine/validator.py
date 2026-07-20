@@ -239,7 +239,7 @@ class BaseValidator:
         else:
             from ultralytics.nn.tasks import DetectionModel
             from ultralytics.utils import LOGGER, RANK
-            from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
+            from ultralytics.utils._compat import prepare_qat_pt2e, convert_pt2e, move_exported_model_to_eval, allow_exported_model_train_eval, capture_for_training
             self.device = self._resolve_device(self.args.get("device", 0), batch=self.args.batch)
             float_model = DetectionModel(model.yaml, nc=model.yaml['nc'], verbose=True and RANK == -1)
             float_model.load(model)
@@ -255,15 +255,15 @@ class BaseValidator:
             dynamic_shapes = {
                 "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
             }
-            exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
+            exported_model = capture_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
             prepared_model = prepare_qat_pt2e(exported_model, quantizer)
             prepared_model.to(self.device)
 
             ckpt = self._load_qat_checkpoint(self.args.qat_pt_path, self.device)
             prepared_model.load_state_dict(ckpt["qat_model"])
             qat_model = convert_pt2e(prepared_model)
-            torch.ao.quantization.move_exported_model_to_eval(qat_model)
-            torch.ao.quantization.allow_exported_model_train_eval(qat_model)
+            move_exported_model_to_eval(qat_model)
+            allow_exported_model_train_eval(qat_model)
             qat_model.eval()
             qat_model.to(self.device)
  

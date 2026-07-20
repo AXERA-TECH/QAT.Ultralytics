@@ -1303,7 +1303,7 @@ class Exporter:
         # f = str(self.file.with_suffix("_qat_slim.onnx"))
         from ultralytics.utils.ax_quantizer import AXQuantizer
         from onnxslim import slim
-        from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e, convert_pt2e
+        from ultralytics.utils._compat import prepare_qat_pt2e, convert_pt2e, capture_for_training
         # quantizer
         config_path = "./config.json"
         quantizer = AXQuantizer(config_path)
@@ -1324,7 +1324,7 @@ class Exporter:
             "x":{0: torch.export.Dim.AUTO, 2: torch.export.Dim.AUTO, 3: torch.export.Dim.AUTO} 
         }
         dynamic_shapes = None
-        exported_model = torch.export.export_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
+        exported_model = capture_for_training(float_model, (inputs,), dynamic_shapes=dynamic_shapes).module() 
         prepared_model = prepare_qat_pt2e(exported_model, quantizer)
         state_dict1 = torch.load(self.args.qat_pt_path, map_location=torch.device(device))
         state_dict2 = prepared_model.state_dict()
@@ -1342,7 +1342,7 @@ class Exporter:
         # qat_onnx_sp
         quantized_model = convert_pt2e(prepared_model)
         onnx_program = torch.onnx.export(quantized_model, (inputs,), dynamo=True, opset_version=21)
-        onnx_program.optimize()
+        # onnx_program.optimize()  # torch2.10:optimize 折叠权重 DQ / 污染混合 4bit,保持 optimize=False
         onnx_program.save(qat_onnx_sp)
 
         model_simp = slim(onnx_program.model_proto)

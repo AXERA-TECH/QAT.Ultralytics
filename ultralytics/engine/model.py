@@ -32,9 +32,12 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
     get_symmetric_quantization_config,
 )
-from torch.ao.quantization.quantize_pt2e import (
+from ultralytics.utils._compat import (
     prepare_qat_pt2e,
     convert_pt2e,
+    move_exported_model_to_eval,
+    allow_exported_model_train_eval,
+    capture_for_training,
 )
 
 # from utils.quantizer import (
@@ -895,8 +898,8 @@ class Model(torch.nn.Module):
         }
 
         # export model for training with dynamic shapes
-        exported_model = torch.export.export_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes) 
-        # torch.ao.quantization.allow_exported_model_train_eval(exported_model)
+        exported_model = capture_for_training(self.model, (inputs,), dynamic_shapes=dynamic_shapes) 
+        # allow_exported_model_train_eval(exported_model)
         exported_module = exported_model.module()
 
         # # testing acc of exported model before quantization
@@ -906,8 +909,8 @@ class Model(torch.nn.Module):
 
         # prepare model for PT2E QAT
         prepared_model = prepare_qat_pt2e(exported_module, quantizer)
-        torch.ao.quantization.move_exported_model_to_eval(prepared_model)
-        torch.ao.quantization.allow_exported_model_train_eval(prepared_model)
+        move_exported_model_to_eval(prepared_model)
+        allow_exported_model_train_eval(prepared_model)
 
         # # testing acc of prepared model
         # print('prepared_model acc before qat!')

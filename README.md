@@ -4,7 +4,7 @@
 
 **使用建议：** 先确认 `qat` 到部署流程畅通。使用 `train.py` 配置小批量数据，训练 `1 epoch`；使用 `eval.py` 确认精度符合训练时的评估精度；使用`export.py` 导出 `qat_slim.onnx`；按照 [qat_deployment.md](./compile/qat_deployment.md) 进行 `axmodel` 导出。
 
-**注：**此分支支持torch2.10版本对yolo11模型进行QAT。
+**注：** 此分支支持torch2.10版本对yolo11模型进行QAT。
 
 ## 精度参考
 

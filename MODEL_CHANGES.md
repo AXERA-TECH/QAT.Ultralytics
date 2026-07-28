@@ -127,7 +127,9 @@ return {"boxes": boxes, "scores": scores, "feats": x}
 # 当前（无 torch.cat，concat_flag=False）：
 return [
     {
-        "boxes": box_head[i](x[i]).view(bs, 4 * reg_max, -1), "scores": cls_head[i](x[i]).view(bs, self.nc, -1), "feats": [x[i]]
+        "boxes": box_head[i](x[i]).view(bs, 4 * reg_max, -1),
+        "scores": cls_head[i](x[i]).view(bs, self.nc, -1),
+        "feats": [x[i]],
     }
     for i in range(self.nl)
 ]

@@ -115,7 +115,7 @@ logging = [
 ]
 extra = [
     "ipython", # interactive notebook
-    "albumentations>=1.4.6", # training augmentations
+    "albumentations>=2.0.8", # training augmentations
     "faster-coco-eval>=1.6.7", # COCO mAP
 ]
 typing = [

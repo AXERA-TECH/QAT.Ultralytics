@@ -295,8 +295,7 @@ def get_weight_shape(gm: torch.fx.GraphModule, weight_node):
 
 
 def _ctr_is_fakequat(obj, fake_quant_class: FakeQuantizeBase = _LearnableFakeQuantize):
-    """检查一个对象是否是 _LearnableFakeQuantize 类、其实例， 或者一个包装了 _LearnableFakeQuantize 类的 functools.partial 对象。.
-    """
+    """检查一个对象是否是 _LearnableFakeQuantize 类、其实例， 或者一个包装了 _LearnableFakeQuantize 类的 functools.partial 对象。."""
     if isinstance(obj, _PartialWrapper):
         wrapped_callable = obj.p  # Access the wrapped callable
         if isinstance(wrapped_callable, functools.partial):

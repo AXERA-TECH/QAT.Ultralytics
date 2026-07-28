@@ -116,7 +116,7 @@ logging = [
 extra = [
     "ipython", # interactive notebook
     "albumentations>=1.4.6", # training augmentations
-    "faster-coco-eval>=1.6.7", # COCO mAP
+    "faster-coco-eval>=1.7.2", # COCO mAP
 ]
 typing = [
     "scipy-stubs>=1.14.1.4; python_version >= '3.10'",

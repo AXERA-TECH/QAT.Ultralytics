@@ -1,7 +1,7 @@
-from typing import Optional
-from onnxscript.onnx_opset import opset18 as op
-from onnxscript.function_libs.torch_lib.ops import common
+from __future__ import annotations
+
 from onnxscript.function_libs.torch_lib.registration import torch_op
+from onnxscript.onnx_opset import opset18 as op
 from onnxscript.onnx_types import TensorType
 
 
@@ -17,7 +17,7 @@ def quantized_decomposed_dequantize_per_channel(
     quant_min: int,
     quant_max: int,
     dtype: int,
-    out_dtype: Optional[int] = None,
+    out_dtype: int | None = None,
 ) -> TensorType:
     # from IPython import embed; embed()
     zero_points = op.Cast(zero_points, to=dtype)
@@ -42,7 +42,7 @@ def quantized_decomposed_quantize_per_channel(
     quant_min: int,
     quant_max: int,
     dtype: int,
-    out_dtype: Optional[int] = None,
+    out_dtype: int | None = None,
 ) -> TensorType:
     # from IPython import embed; embed()
     zero_points = op.Cast(zero_points, to=dtype)

@@ -254,7 +254,7 @@ class Tuner:
                 f.write(headers)
                 for result in all_results:
                     fitness = result["fitness"] or 0.0
-                    hyp_values = [result["hyperparameters"].get(k, self.args.get(k)) for k in self.space.keys()]
+                    hyp_values = [result["hyperparameters"].get(k, self.args.get(k)) for k in self.space]
                     log_row = [round(fitness, 5), *hyp_values]
                     f.write(",".join(map(str, log_row)) + "\n")
 
@@ -301,12 +301,12 @@ class Tuner:
                 # MongoDB already sorted by fitness DESC, so results[0] is best
                 x = np.array(
                     [
-                        [r["fitness"]] + [r["hyperparameters"].get(k, self.args.get(k)) for k in self.space.keys()]
+                        [r["fitness"]] + [r["hyperparameters"].get(k, self.args.get(k)) for k in self.space]
                         for r in results
                     ]
                 )
             elif self.collection.name in self.collection.database.list_collection_names():  # Tuner started elsewhere
-                x = np.array([[0.0] + [getattr(self.args, k) for k in self.space.keys()]])
+                x = np.array([[0.0] + [getattr(self.args, k) for k in self.space]])
 
         # Fall back to CSV if MongoDB unavailable or empty
         if x is None and self.tune_csv.exists():
@@ -333,7 +333,7 @@ class Tuner:
                 factors = np.where(mask, np.exp(step), 1.0).clip(0.25, 4.0)
             hyp = {k: float(genes[i] * factors[i]) for i, k in enumerate(self.space.keys())}
         else:
-            hyp = {k: getattr(self.args, k) for k in self.space.keys()}
+            hyp = {k: getattr(self.args, k) for k in self.space}
 
         # Constrain to limits
         for k, bounds in self.space.items():
@@ -418,7 +418,7 @@ class Tuner:
                     break
             else:
                 # Save to CSV only if no MongoDB
-                log_row = [round(fitness, 5)] + [mutated_hyp[k] for k in self.space.keys()]
+                log_row = [round(fitness, 5)] + [mutated_hyp[k] for k in self.space]
                 headers = "" if self.tune_csv.exists() else (",".join(["fitness", *list(self.space.keys())]) + "\n")
                 with open(self.tune_csv, "a", encoding="utf-8") as f:
                     f.write(headers + ",".join(map(str, log_row)) + "\n")

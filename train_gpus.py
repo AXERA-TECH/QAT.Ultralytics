@@ -1,5 +1,7 @@
 """Experimental multi-GPU PT2E QAT training entry point."""
 
+from __future__ import annotations
+
 import argparse
 import os
 from pathlib import Path
@@ -7,7 +9,6 @@ from pathlib import Path
 os.environ.setdefault("ULTRALYTICS_SKIP_DATASET_HASH", "1")
 
 from ultralytics import YOLO
-
 
 ROOT = Path(__file__).resolve().parent
 PROFILES = {

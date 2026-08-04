@@ -14,7 +14,6 @@ import numpy as np
 import onnx
 from onnx import TensorProto, numpy_helper
 
-
 DTYPE_NAMES = {
     TensorProto.INT8: "S8",
     TensorProto.UINT8: "U8",
@@ -75,9 +74,7 @@ def infer_config_expectations(config: dict[str, Any]) -> tuple[int, int]:
         "Softmax": matching_entries(config, "softmax", input_dtype="S8", output_dtype="S8"),
         "QKV Conv": matching_entries(config, "conv", input_dtype="U8", output_dtype="S8"),
         "PE Conv": [
-            item
-            for item in matching_entries(config, "conv", input_dtype="S8")
-            if config_dtype(item, "output") is None
+            item for item in matching_entries(config, "conv", input_dtype="S8") if config_dtype(item, "output") is None
         ],
     }
     counts = {}
@@ -193,9 +190,7 @@ def validate_output_contract(graph, cls_u16_outputs, producers, initializers, er
         errors.append(f"graph outputs={len(graph.output)} cannot be split into equal box/score groups")
         return []
 
-    outputs = [
-        (output.name, qdtype(producers.get(output.name), initializers, producers)) for output in graph.output
-    ]
+    outputs = [(output.name, qdtype(producers.get(output.name), initializers, producers)) for output in graph.output]
     semantic_outputs = []
     for name, dtype in outputs:
         match = re.fullmatch(r"(boxes|scores)_p(\d+)", name)
@@ -297,13 +292,9 @@ def main() -> None:
                     aligned_split_reshape += 1
                 else:
                     errors.append(f"Split/Reshape qparams differ: {split.name} -> {reshape.name}")
-    if (
-        args.expect_aligned_split_reshape is not None
-        and aligned_split_reshape != args.expect_aligned_split_reshape
-    ):
+    if args.expect_aligned_split_reshape is not None and aligned_split_reshape != args.expect_aligned_split_reshape:
         errors.append(
-            f"aligned Split/Reshape branches={aligned_split_reshape}, "
-            f"expected {args.expect_aligned_split_reshape}"
+            f"aligned Split/Reshape branches={aligned_split_reshape}, expected {args.expect_aligned_split_reshape}"
         )
 
     output_dtypes = []
@@ -325,10 +316,7 @@ def main() -> None:
     print(f"requant nodes: {len(requant_nodes)}")
     print(f"aligned Split/Reshape branches: {aligned_split_reshape}")
     for index, (first_matmul, scale_mul, softmax, second_matmul) in enumerate(regions, start=1):
-        print(
-            f"Attention {index}: {first_matmul.name} -> {scale_mul.name} -> "
-            f"{softmax.name} -> {second_matmul.name}"
-        )
+        print(f"Attention {index}: {first_matmul.name} -> {scale_mul.name} -> {softmax.name} -> {second_matmul.name}")
 
     if errors:
         raise SystemExit("\n".join(f"ERROR: {error}" for error in errors))

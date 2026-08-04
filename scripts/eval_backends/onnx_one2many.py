@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -13,14 +16,86 @@ import tqdm
 
 def coco80_to_coco91_class() -> list[int]:
     return [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-        11, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-        22, 23, 24, 25, 27, 28, 31, 32, 33, 34,
-        35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-        46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-        56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
-        67, 70, 72, 73, 74, 75, 76, 77, 78, 79,
-        80, 81, 82, 84, 85, 86, 87, 88, 89, 90,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        27,
+        28,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        67,
+        70,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
     ]
 
 
@@ -66,9 +141,7 @@ class LetterBox:
         bottom = round(dh + 0.1)
         left = round(dw - 0.1) if self.center else 0
         right = round(dw + 0.1)
-        return cv2.copyMakeBorder(
-            image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(self.padding_value,) * 3
-        )
+        return cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(self.padding_value,) * 3)
 
 
 def ensure_hwc(output: np.ndarray, channels: int) -> np.ndarray:
@@ -117,7 +190,9 @@ def scale_boxes(img1_shape: tuple[int, int], boxes: torch.Tensor, img0_shape: tu
     return clip_boxes(boxes, img0_shape)
 
 
-def batched_nms(boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray, iou_thres: float, max_det: int) -> np.ndarray:
+def batched_nms(
+    boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray, iou_thres: float, max_det: int
+) -> np.ndarray:
     if len(boxes) == 0:
         return np.array([], dtype=np.int64)
 
@@ -253,7 +328,14 @@ def decode_predictions(outputs: list[np.ndarray], num_classes: int = 80) -> torc
 
 
 class YOLO26ONNXPredictor:
-    def __init__(self, model_path: str, conf_thres: float = 0.001, iou_thres: float = 0.7, max_det: int = 300, max_nms: int = 30000):
+    def __init__(
+        self,
+        model_path: str,
+        conf_thres: float = 0.001,
+        iou_thres: float = 0.7,
+        max_det: int = 300,
+        max_nms: int = 30000,
+    ):
         self.model_path = model_path
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
@@ -386,7 +468,7 @@ def main():
         break
     for i in predictor.predictions[:]:
         print(i)
-    exit(0)
+    sys.exit(0)
     output_path = Path(args.output_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:

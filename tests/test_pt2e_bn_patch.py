@@ -2,7 +2,7 @@ import copy
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_qat_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from torch.export import Dim

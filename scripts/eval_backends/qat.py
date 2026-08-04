@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""统一 QAT 模型 eval（替代 eval.py / eval_one2one.py / eval_headU16_official.py）。
+"""统一 QAT 模型 eval（替代 eval.py / eval_one2one.py / eval_headU16_official.py）。.
 
 QAT 模型是 PT2E prepared graph（带 observer/fake-quant），不能走标准 model.val（observer 匹配 + fuse 都会出问题），
 必须：prepare_pt2e_qat_model 重建同构图 → load ckpt 的 qat_model state（校验 missing==0）→ FakeTrainer + DetectionValidator。
@@ -14,7 +14,9 @@ QAT 模型是 PT2E prepared graph（带 observer/fake-quant），不能走标准
     --quant-config config-qat/config_siluInU8_attnS8_clsU16.json --device 0
   python eval.py qat --ckpt <o2m_best.pt> --quant-config <cfg> --end2end False
 """
+
 import os
+
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # ordinal=nvidia-smi index，避免落到满载 GPU0
 import argparse
 import copy
@@ -24,6 +26,7 @@ from types import SimpleNamespace
 
 import torch
 
+import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
 from ultralytics import YOLO
 from ultralytics.data.build import build_dataloader, build_yolo_dataset
 from ultralytics.data.utils import check_det_dataset
@@ -34,7 +37,6 @@ from ultralytics.models.yolo.pose.val import PoseValidator
 from ultralytics.utils import DEFAULT_CFG_DICT
 from ultralytics.utils.qat_utils import prepare_pt2e_qat_model
 from ultralytics.utils.torch_utils import select_device
-import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
 
 warnings.filterwarnings("ignore")
 
@@ -44,7 +46,7 @@ def _bool(x):
 
 
 class FakeTrainer:
-    """把 QAT prepared graph 喂给 DetectionValidator 的 training-val 路径（observer 天然匹配）。"""
+    """把 QAT prepared graph 喂给 DetectionValidator 的 training-val 路径（observer 天然匹配）。."""
 
     def __init__(self, float_model, qat_model, data_dict, device, end2end, task):
         self.model = float_model
@@ -59,15 +61,26 @@ class FakeTrainer:
         self.epoch = 0
         self.epochs = 1
         from collections import namedtuple
+
         self.stopper = namedtuple("Stopper", ["possible_stop"])(possible_stop=False)
-        self.args = argparse.Namespace(half=False, amp=False, compile=False, plots=False, end2end=end2end,
-                                       conf=0.001, iou=0.7, max_det=300, single_cls=False,
-                                       agnostic_nms=False, save_json=False, save_hybrid=False)
+        self.args = argparse.Namespace(
+            half=False,
+            amp=False,
+            compile=False,
+            plots=False,
+            end2end=end2end,
+            conf=0.001,
+            iou=0.7,
+            max_det=300,
+            single_cls=False,
+            agnostic_nms=False,
+            save_json=False,
+            save_hybrid=False,
+        )
 
     def label_loss_items(self, loss_items=None, prefix="val"):
         if loss_items is not None:
-            return dict(zip([f"{prefix}/{x}" for x in self.loss_names],
-                            [round(float(x), 5) for x in loss_items]))
+            return dict(zip([f"{prefix}/{x}" for x in self.loss_names], [round(float(x), 5) for x in loss_items]))
         return [f"{prefix}/{x}" for x in self.loss_names]
 
 
@@ -120,9 +133,8 @@ def rebuild_task_model(model, task, model_yaml, data_dict):
 def run_classify(a, device):
     """Evaluate a classification QAT checkpoint (fake-quant) via ClassificationValidator.
 
-    Classification has no boxes/NMS/end2end/pycoco; the metric is Top-1/Top-5. The QAT graph
-    outputs a single logits tensor, which BaseValidator._rebuild_pt2e_predictions passes through
-    unchanged for non-dict outputs.
+    Classification has no boxes/NMS/end2end/pycoco; the metric is Top-1/Top-5. The QAT graph outputs a single logits
+    tensor, which BaseValidator._rebuild_pt2e_predictions passes through unchanged for non-dict outputs.
     """
     from ultralytics.data.utils import check_cls_dataset
     from ultralytics.models.yolo.classify.val import ClassificationValidator
@@ -138,15 +150,20 @@ def run_classify(a, device):
     float_model.names = data_dict["names"]
     float_model.train()
 
-    _, prepared = prepare_pt2e_qat_model(float_model=float_model, device=device,
-                                         config_path=a.quant_config, imgsz=a.imgsz, dynamic_batch_max=128)
+    _, prepared = prepare_pt2e_qat_model(
+        float_model=float_model, device=device, config_path=a.quant_config, imgsz=a.imgsz, dynamic_batch_max=128
+    )
     float_model.criterion = float_model.init_criterion()
     prepared = BaseValidator._prepare_pt2e_model_for_eval(prepared)
 
     ckpt = torch.load(a.ckpt, weights_only=False, map_location="cpu")
     qat_state = ckpt.get("qat_ema") or ckpt.get("qat_model") or ckpt.get("model")
     assert qat_state is not None, "ckpt 无 qat_ema/qat_model/model"
-    src = "qat_ema" if ckpt.get("qat_ema") is not None else ("qat_model" if ckpt.get("qat_model") is not None else "model")
+    src = (
+        "qat_ema"
+        if ckpt.get("qat_ema") is not None
+        else ("qat_model" if ckpt.get("qat_model") is not None else "model")
+    )
     rep = prepared.load_state_dict(qat_state, strict=False)
     print(f"[load] from {src}  missing={len(rep.missing_keys)}  unexpected={len(rep.unexpected_keys)}", flush=True)
     assert len(rep.missing_keys) == 0, f"❌ observer 不匹配 missing={len(rep.missing_keys)}（config 与训练不一致？）"
@@ -156,9 +173,21 @@ def run_classify(a, device):
     prepared.to(device)
 
     cfg = copy.deepcopy(DEFAULT_CFG_DICT)
-    cfg.update({"task": "classify", "mode": "val", "data": a.data, "imgsz": a.imgsz, "batch": a.batch,
-                "device": a.device, "workers": a.workers, "split": "val", "half": False, "plots": False,
-                "save_json": False})
+    cfg.update(
+        {
+            "task": "classify",
+            "mode": "val",
+            "data": a.data,
+            "imgsz": a.imgsz,
+            "batch": a.batch,
+            "device": a.device,
+            "workers": a.workers,
+            "split": "val",
+            "half": False,
+            "plots": False,
+            "save_json": False,
+        }
+    )
     validator = ClassificationValidator(args=cfg)
     validator.dataloader = validator.get_dataloader(data_dict["val"], a.batch)
     ft = FakeTrainer(float_model, prepared, data_dict, device, False, "classify")
@@ -178,7 +207,10 @@ def main():
     if a.task == "classify":
         return run_classify(a, device)
     requested_tag = "one2one" if a.end2end else "one2many"
-    print(f"[eval qat] requested={requested_tag}  rect={a.rect}  pycoco={a.pycoco}  ckpt={a.ckpt}  cfg={a.quant_config}", flush=True)
+    print(
+        f"[eval qat] requested={requested_tag}  rect={a.rect}  pycoco={a.pycoco}  ckpt={a.ckpt}  cfg={a.quant_config}",
+        flush=True,
+    )
 
     data_dict = check_det_dataset(a.data)
     # 1) float model → train() 图（forward_head 训练分支，供 export_for_training 追踪）
@@ -194,15 +226,21 @@ def main():
     float_model.model[-1].end2end = a.end2end
     end2end = bool(float_model.model[-1].end2end)
     if end2end != a.end2end:
-        print(f"[eval qat] requested end2end={a.end2end}, but {type(float_model.model[-1]).__name__} has no one2one head; use end2end={end2end}", flush=True)
+        print(
+            f"[eval qat] requested end2end={a.end2end}, but {type(float_model.model[-1]).__name__} has no one2one head; use end2end={end2end}",
+            flush=True,
+        )
     tag = "one2one" if end2end else "one2many"
     model_args = getattr(float_model, "args", {})
     hyp = dict(DEFAULT_CFG_DICT, **model_args) if isinstance(model_args, dict) else {}
-    hyp.setdefault("box", 7.5); hyp.setdefault("cls", 0.5); hyp.setdefault("dfl", 1.5)
+    hyp.setdefault("box", 7.5)
+    hyp.setdefault("cls", 0.5)
+    hyp.setdefault("dfl", 1.5)
 
     # 2) 重建同构 PT2E prepared graph（与 ckpt observer 匹配）
-    _, prepared = prepare_pt2e_qat_model(float_model=float_model, device=device,
-                                         config_path=a.quant_config, imgsz=a.imgsz, dynamic_batch_max=128)
+    _, prepared = prepare_pt2e_qat_model(
+        float_model=float_model, device=device, config_path=a.quant_config, imgsz=a.imgsz, dynamic_batch_max=128
+    )
     float_model.args = SimpleNamespace(**hyp)
     float_model.criterion = float_model.init_criterion()
     prepared = BaseValidator._prepare_pt2e_model_for_eval(prepared)
@@ -211,7 +249,11 @@ def main():
     ckpt = torch.load(a.ckpt, weights_only=False, map_location="cpu")
     qat_state = ckpt.get("qat_ema") or ckpt.get("qat_model") or ckpt.get("model")
     assert qat_state is not None, "ckpt 无 qat_ema/qat_model/model"
-    src = "qat_ema" if ckpt.get("qat_ema") is not None else ("qat_model" if ckpt.get("qat_model") is not None else "model")
+    src = (
+        "qat_ema"
+        if ckpt.get("qat_ema") is not None
+        else ("qat_model" if ckpt.get("qat_model") is not None else "model")
+    )
     rep = prepared.load_state_dict(qat_state, strict=False)
     print(f"[load] from {src}  missing={len(rep.missing_keys)}  unexpected={len(rep.unexpected_keys)}", flush=True)
     assert len(rep.missing_keys) == 0, f"❌ observer 不匹配 missing={len(rep.missing_keys)}（config 与训练不一致？）"
@@ -229,21 +271,64 @@ def main():
 
     # 4) dataloader（rect 口径）
     gs = max(int(float_model.stride.max()), 32)
-    val_ns = argparse.Namespace(task=a.task, data=a.data, imgsz=a.imgsz, batch=a.batch, workers=a.workers,
-                                fraction=1.0, augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0,
-                                hsv_s=0.0, hsv_v=0.0, degrees=0.0, translate=0.0, scale=0.0, shear=0.0,
-                                perspective=0.0, mosaic=0.0, mixup=0.0, cutmix=0.0, copy_paste=0.0,
-                                auto_augment=None, single_cls=False, classes=None, overlap_mask=False,
-                                mask_ratio=4, rect=a.rect, cache=False)
+    val_ns = argparse.Namespace(
+        task=a.task,
+        data=a.data,
+        imgsz=a.imgsz,
+        batch=a.batch,
+        workers=a.workers,
+        fraction=1.0,
+        augment=False,
+        erasing=0.0,
+        flipud=0.0,
+        fliplr=0.0,
+        hsv_h=0.0,
+        hsv_s=0.0,
+        hsv_v=0.0,
+        degrees=0.0,
+        translate=0.0,
+        scale=0.0,
+        shear=0.0,
+        perspective=0.0,
+        mosaic=0.0,
+        mixup=0.0,
+        cutmix=0.0,
+        copy_paste=0.0,
+        auto_augment=None,
+        single_cls=False,
+        classes=None,
+        overlap_mask=False,
+        mask_ratio=4,
+        rect=a.rect,
+        cache=False,
+    )
     val_dataset = build_yolo_dataset(val_ns, data_dict["val"], a.batch, data_dict, mode="val", rect=a.rect, stride=gs)
-    val_loader = build_dataloader(val_dataset, batch=a.batch, workers=a.workers, shuffle=False, rank=-1, drop_last=False)
+    val_loader = build_dataloader(
+        val_dataset, batch=a.batch, workers=a.workers, shuffle=False, rank=-1, drop_last=False
+    )
 
     # 5) validate
     cfg = copy.deepcopy(DEFAULT_CFG_DICT)
-    cfg.update({"task": a.task, "mode": "val", "data": a.data, "imgsz": a.imgsz, "batch": a.batch,
-                "device": a.device, "workers": a.workers, "split": "val", "end2end": end2end,
-                "conf": 0.001, "iou": 0.7, "max_det": 300, "half": False, "plots": False,
-                "save_json": a.pycoco, "save_hybrid": False})
+    cfg.update(
+        {
+            "task": a.task,
+            "mode": "val",
+            "data": a.data,
+            "imgsz": a.imgsz,
+            "batch": a.batch,
+            "device": a.device,
+            "workers": a.workers,
+            "split": "val",
+            "end2end": end2end,
+            "conf": 0.001,
+            "iou": 0.7,
+            "max_det": 300,
+            "half": False,
+            "plots": False,
+            "save_json": a.pycoco,
+            "save_hybrid": False,
+        }
+    )
     validator_class = PoseValidator if a.task == "pose" else OBBValidator if a.task == "obb" else DetectionValidator
     validator = validator_class(dataloader=val_loader, args=cfg)
     ft = FakeTrainer(float_model, prepared, data_dict, device, end2end, a.task)
@@ -266,6 +351,7 @@ def main():
             coco_map = st.get("metrics/mAP50-95(B)", None)
         except Exception:
             import traceback
+
             traceback.print_exc()
 
     print("\n" + "=" * 60, flush=True)

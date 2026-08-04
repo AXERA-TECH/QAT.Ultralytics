@@ -241,8 +241,8 @@ class BaseTrainer:
             try:
                 LOGGER.info(f"{colorstr('DDP:')} debug command {' '.join(cmd)}")
                 subprocess.run(cmd, check=True)
-            except Exception as e:
-                raise e
+            except Exception:
+                raise
             finally:
                 ddp_cleanup(self, str(file))
 
@@ -677,7 +677,7 @@ class BaseTrainer:
                 "optimizer": convert_optimizer_state_dict_to_fp16(deepcopy(self.optimizer.state_dict())),
                 "scaler": self.scaler.state_dict(),
                 "train_args": vars(self.args),  # save as dict
-                "train_metrics": {**self.metrics, **{"fitness": self.fitness}},
+                "train_metrics": {**self.metrics, "fitness": self.fitness},
                 "train_results": self.read_results_csv(),
                 "date": datetime.now().isoformat(),
                 "version": __version__,
@@ -770,6 +770,7 @@ class BaseTrainer:
             self.ema.update(self.model)
         if self.qat_model is not None and self.qat_ema is None and getattr(self.args, "qat_ema", True):
             from ultralytics.utils.torch_utils import ModelEMA
+
             self.qat_ema = ModelEMA(self.qat_model, decay=0.9999, tau=2000)
         if self.qat_ema is not None:
             self.qat_ema.update(self.qat_model)
@@ -862,7 +863,6 @@ class BaseTrainer:
 
     def build_targets(self, preds, targets):
         """Build target tensors for training YOLO model."""
-        pass
 
     def progress_string(self):
         """Return a string describing training progress."""
@@ -871,11 +871,9 @@ class BaseTrainer:
     # TODO: may need to put these following functions into callback
     def plot_training_samples(self, batch, ni):
         """Plot training samples during YOLO training."""
-        pass
 
     def plot_training_labels(self):
         """Plot training labels for YOLO model."""
-        pass
 
     def save_metrics(self, metrics):
         """Save training metrics to a CSV file."""
@@ -1085,11 +1083,11 @@ class BaseTrainer:
         optimizers = {"Adam", "Adamax", "AdamW", "NAdam", "RAdam", "RMSProp", "SGD", "MuSGD", "auto"}
         name = {x.lower(): x for x in optimizers}.get(name.lower())
         if name in {"Adam", "Adamax", "AdamW", "NAdam", "RAdam"}:
-            optim_args = dict(lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+            optim_args = {"lr": lr, "betas": (momentum, 0.999), "weight_decay": 0.0}
         elif name == "RMSProp":
-            optim_args = dict(lr=lr, momentum=momentum)
+            optim_args = {"lr": lr, "momentum": momentum}
         elif name == "SGD" or name == "MuSGD":
-            optim_args = dict(lr=lr, momentum=momentum, nesterov=True)
+            optim_args = {"lr": lr, "momentum": momentum, "nesterov": True}
         else:
             raise NotImplementedError(
                 f"Optimizer '{name}' not found in list of available optimizers {optimizers}. "

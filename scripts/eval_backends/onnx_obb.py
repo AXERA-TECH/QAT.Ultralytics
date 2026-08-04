@@ -84,8 +84,7 @@ class OrtOBB(torch.nn.Module):
                 raise RuntimeError(f"Unexpected OBB QuantONNX output shape: {tuple(tensor.shape)}")
             if tensor.shape[1] != expected_channels[name]:
                 raise RuntimeError(
-                    f"OBB QuantONNX output {name!r} has {tensor.shape[1]} channels; "
-                    f"expected {expected_channels[name]}"
+                    f"OBB QuantONNX output {name!r} has {tensor.shape[1]} channels; expected {expected_channels[name]}"
                 )
         anchors = {tensor.shape[2] for tensor in outputs.values()}
         if len(anchors) != 1:
@@ -198,24 +197,59 @@ def main() -> None:
 
     stride = max(int(float_model.stride.max()), 32)
     dataset_args = argparse.Namespace(
-        task="obb", data=args.data, imgsz=args.imgsz, batch=args.batch, workers=args.workers, fraction=1.0,
-        augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0, hsv_s=0.0, hsv_v=0.0,
-        degrees=0.0, translate=0.0, scale=0.0, shear=0.0, perspective=0.0, mosaic=0.0,
-        mixup=0.0, cutmix=0.0, copy_paste=0.0, auto_augment=None, single_cls=False, classes=None,
-        overlap_mask=False, mask_ratio=4, rect=False, cache=False,
+        task="obb",
+        data=args.data,
+        imgsz=args.imgsz,
+        batch=args.batch,
+        workers=args.workers,
+        fraction=1.0,
+        augment=False,
+        erasing=0.0,
+        flipud=0.0,
+        fliplr=0.0,
+        hsv_h=0.0,
+        hsv_s=0.0,
+        hsv_v=0.0,
+        degrees=0.0,
+        translate=0.0,
+        scale=0.0,
+        shear=0.0,
+        perspective=0.0,
+        mosaic=0.0,
+        mixup=0.0,
+        cutmix=0.0,
+        copy_paste=0.0,
+        auto_augment=None,
+        single_cls=False,
+        classes=None,
+        overlap_mask=False,
+        mask_ratio=4,
+        rect=False,
+        cache=False,
     )
-    dataset = build_yolo_dataset(
-        dataset_args, data["val"], args.batch, data, mode="val", rect=False, stride=stride
-    )
+    dataset = build_yolo_dataset(dataset_args, data["val"], args.batch, data, mode="val", rect=False, stride=stride)
     dataloader = build_dataloader(
         dataset, batch=args.batch, workers=args.workers, shuffle=False, rank=-1, drop_last=False
     )
 
     validator_args = copy.deepcopy(DEFAULT_CFG_DICT)
     validator_args.update(
-        task="obb", mode="val", data=args.data, imgsz=args.imgsz, batch=args.batch, device=args.device,
-        workers=args.workers, split="val", end2end=True, conf=0.001, iou=0.7, max_det=300, half=False,
-        plots=False, save_json=args.save_json, save_hybrid=False,
+        task="obb",
+        mode="val",
+        data=args.data,
+        imgsz=args.imgsz,
+        batch=args.batch,
+        device=args.device,
+        workers=args.workers,
+        split="val",
+        end2end=True,
+        conf=0.001,
+        iou=0.7,
+        max_det=300,
+        half=False,
+        plots=False,
+        save_json=args.save_json,
+        save_hybrid=False,
     )
     validator = OBBValidator(dataloader=dataloader, args=validator_args)
     results = validator(trainer=FakeTrainer(float_model, wrapper, data, device))

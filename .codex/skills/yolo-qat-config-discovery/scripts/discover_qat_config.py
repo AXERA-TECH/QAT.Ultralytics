@@ -16,7 +16,6 @@ from torch.export import Dim
 
 from ultralytics import YOLO
 
-
 CONV_OPS = {torch.ops.aten.conv2d.default}
 SILU_OPS = {torch.ops.aten.silu.default, torch.ops.aten.silu_.default}
 MATMUL_OPS = {torch.ops.aten.matmul.default}
@@ -223,8 +222,16 @@ def discover_attention(
     for owner, nodes in attention_groups.items():
         matmuls = unique_nodes([node for node in nodes if node.target in MATMUL_OPS], order)
         softmaxes = unique_nodes([node for node in nodes if node.target in SOFTMAX_OPS], order)
-        qkv_convs = [node for node in nodes if node.target in CONV_OPS and any(path.endswith(".attn.qkv.conv") for path in module_paths(node))]
-        pe_convs = [node for node in nodes if node.target in CONV_OPS and any(path.endswith(".attn.pe.conv") for path in module_paths(node))]
+        qkv_convs = [
+            node
+            for node in nodes
+            if node.target in CONV_OPS and any(path.endswith(".attn.qkv.conv") for path in module_paths(node))
+        ]
+        pe_convs = [
+            node
+            for node in nodes
+            if node.target in CONV_OPS and any(path.endswith(".attn.pe.conv") for path in module_paths(node))
+        ]
         if len(matmuls) != 2 or len(softmaxes) != 1 or len(qkv_convs) != 1 or len(pe_convs) != 1:
             raise RuntimeError(
                 f"Incomplete Attention {owner}: matmuls={len(matmuls)}, softmax={len(softmaxes)}, "
@@ -251,7 +258,9 @@ def discover_attention(
     valid_attention.sort(key=lambda item: order[item["first_matmul"]])
     if expected_attention is not None and len(valid_attention) != expected_attention:
         owners = [item["owner"] for item in valid_attention]
-        raise RuntimeError(f"Found {len(valid_attention)} complete Attention region(s), expected {expected_attention}: {owners}")
+        raise RuntimeError(
+            f"Found {len(valid_attention)} complete Attention region(s), expected {expected_attention}: {owners}"
+        )
     return [
         {key: value.name if isinstance(value, torch.fx.Node) else value for key, value in item.items()}
         for item in valid_attention
@@ -307,19 +316,35 @@ def update_config(template: dict[str, Any], result: dict[str, Any], enable_cls_u
     first_matmul_entry = select_one(
         regional,
         "first Attention MatMul S8 output",
-        lambda item: item.get("module_type") == "matmul" and item.get("module_names") is not None and qdtype(item, "output") == "S8",
+        lambda item: (
+            item.get("module_type") == "matmul"
+            and item.get("module_names") is not None
+            and qdtype(item, "output") == "S8"
+        ),
     )
-    scale_mul_entry = select_one(regional, "Attention scale Mul S8", lambda item: item.get("module_type") == "mul" and qdtype(item, "output") == "S8")
-    softmax_entry = select_one(regional, "Attention Softmax S8", lambda item: item.get("module_type") == "softmax" and qdtype(item, "output") == "S8")
+    scale_mul_entry = select_one(
+        regional,
+        "Attention scale Mul S8",
+        lambda item: item.get("module_type") == "mul" and qdtype(item, "output") == "S8",
+    )
+    softmax_entry = select_one(
+        regional,
+        "Attention Softmax S8",
+        lambda item: item.get("module_type") == "softmax" and qdtype(item, "output") == "S8",
+    )
     qkv_entry = select_one(
         regional,
         "Attention QKV Conv S8 output",
-        lambda item: item.get("module_type") == "conv" and qdtype(item, "input") == "U8" and qdtype(item, "output") == "S8",
+        lambda item: (
+            item.get("module_type") == "conv" and qdtype(item, "input") == "U8" and qdtype(item, "output") == "S8"
+        ),
     )
     pe_entry = select_one(
         regional,
         "Attention PE Conv S8 input",
-        lambda item: item.get("module_type") == "conv" and qdtype(item, "input") == "S8" and qdtype(item, "output") is None,
+        lambda item: (
+            item.get("module_type") == "conv" and qdtype(item, "input") == "S8" and qdtype(item, "output") is None
+        ),
     )
 
     first_matmul_entry["module_names"] = [item["first_matmul"] for item in result["attention"]]
@@ -340,12 +365,18 @@ def update_config(template: dict[str, Any], result: dict[str, Any], enable_cls_u
         for item in regional
         if item.get("module_type") == "conv" and is_cls_u16_entry(item) and qdtype(item, "output") is None
     ]
-    cls_conv_entry = select_one(u16_input_convs, "classification Conv input U16", lambda item: len(item["module_names"]) > 1)
-    boundary_conv_entry = select_one(u16_input_convs, "boundary fan-out Conv input U16", lambda item: len(item["module_names"]) == 1)
+    cls_conv_entry = select_one(
+        u16_input_convs, "classification Conv input U16", lambda item: len(item["module_names"]) > 1
+    )
+    boundary_conv_entry = select_one(
+        u16_input_convs, "boundary fan-out Conv input U16", lambda item: len(item["module_names"]) == 1
+    )
     cls_output_entry = select_one(
         regional,
         "classification output Conv U16",
-        lambda item: item.get("module_type") == "conv" and qdtype(item, "input") == "U16" and qdtype(item, "output") == "U16",
+        lambda item: (
+            item.get("module_type") == "conv" and qdtype(item, "input") == "U16" and qdtype(item, "output") == "U16"
+        ),
     )
     cls_silu_entry["module_names"] = result["cls_silus"]
     boundary_silu_entry["module_names"] = result["boundary_silu"]

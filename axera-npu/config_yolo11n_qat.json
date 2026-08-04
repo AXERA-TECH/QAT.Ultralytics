@@ -22,7 +22,14 @@
       },
       {
         "layer_names": [
-          "node_Reshape_724", "node_Split_1771", "node_Transpose_745", "node_MatMul_751", "node_Mul_760", "node_Softmax_766", "node_Transpose_772", "node_Reshape_801"
+          "node_Reshape_724",
+          "node_Split_1771",
+          "node_Transpose_745",
+          "node_MatMul_751",
+          "node_Mul_760",
+          "node_Softmax_766",
+          "node_Transpose_772",
+          "node_Reshape_801"
         ],
         "data_type": "S8",
         "output_data_type": "S8"
@@ -35,7 +42,7 @@
     "conv_bias_data_type": "FP32",
     "calibration_method": "MinMax",
     "precision_analysis": true,
-    "precision_analysis_method":"EndToEnd",
+    "precision_analysis_method": "EndToEnd",
     "precision_analysis_mode": "NPUBackend"
   },
   "input_processors": [
@@ -48,8 +55,7 @@
       "std": [1, 1, 1]
     }
   ],
-  "output_processors": [
-  ],
+  "output_processors": [],
   "compiler": {
     "check": 2
   }

@@ -13,21 +13,21 @@
 
 ## 精度目标
 
-| 模型 | 模式 | 浮点基线 | QAT 目标 |
-|---|---|---:|---:|
-| YOLO26n | `end2end=True` | 40.2 | >= 39.2 |
-| YOLO26s | `end2end=True` | 47.8 | >= 47.3 |
-| YOLO26n | `end2end=False` | 40.9 | >= 39.9 |
-| YOLO26s | `end2end=False` | 48.6 | >= 48.0 |
+| 模型    | 模式            | 浮点基线 | QAT 目标 |
+| ------- | --------------- | -------: | -------: |
+| YOLO26n | `end2end=True`  |     40.2 |  >= 39.2 |
+| YOLO26s | `end2end=True`  |     47.8 |  >= 47.3 |
+| YOLO26n | `end2end=False` |     40.9 |  >= 39.9 |
+| YOLO26s | `end2end=False` |     48.6 |  >= 48.0 |
 
 ## 交付 Profile
 
 最终 YOLO26n 检测模型只使用以下配置：
 
-| Profile | 配置 | 量化边界 |
-|---|---|---|
-| `accuracy` | `config-qat/config_siluInU16_attnS8_clsU16.json` | 全局 SiLU input U16，Attention S8，分类塔局部 U16 |
-| `throughput` | `config-qat/config_siluInU8_attnS8_clsU16.json` | 全局 SiLU input/output U8，保留 Attention S8 和分类塔局部 U16 |
+| Profile      | 配置                                             | 量化边界                                                      |
+| ------------ | ------------------------------------------------ | ------------------------------------------------------------- |
+| `accuracy`   | `config-qat/config_siluInU16_attnS8_clsU16.json` | 全局 SiLU input U16，Attention S8，分类塔局部 U16             |
+| `throughput` | `config-qat/config_siluInU8_attnS8_clsU16.json`  | 全局 SiLU input/output U8，保留 Attention S8 和分类塔局部 U16 |
 
 不要恢复 exp57 之前的一次性训练脚本和候选量化配置。profile 或图结构变化后，应从浮点预训练权重重新训练，不能跨 profile 续训。
 图结构、PyTorch 版本或导出环境变化后，先使用 `$yolo-qat-config-discovery` 按模块来源和拓扑重新生成 regional 节点配置。
@@ -76,15 +76,15 @@ env PYTHONPATH="$PWD" \
   --quant-config config-qat/config_siluInU8_attnS8_clsU16.json --device cuda:0
 ```
 
-| 模式 | 用途 |
-|---|---|
-| `float` | 浮点基线 |
-| `qat` | prepared fake-quant 对照 |
-| `convert` | 真实 Q/DQ，交付判定依据 |
-| `onnx` | 六输出 one-to-one 检测 QuantONNX |
-| `onnx-obb` | 三输出 OBB QuantONNX 旋转框精度 |
-| `onnx-pose` | 三输出 Pose QuantONNX 的 Box/Pose 精度 |
-| `segment`、`ptq`、`onnx-one2many` | 专项或兼容评估 |
+| 模式                              | 用途                                   |
+| --------------------------------- | -------------------------------------- |
+| `float`                           | 浮点基线                               |
+| `qat`                             | prepared fake-quant 对照               |
+| `convert`                         | 真实 Q/DQ，交付判定依据                |
+| `onnx`                            | 六输出 one-to-one 检测 QuantONNX       |
+| `onnx-obb`                        | 三输出 OBB QuantONNX 旋转框精度        |
+| `onnx-pose`                       | 三输出 Pose QuantONNX 的 Box/Pose 精度 |
+| `segment`、`ptq`、`onnx-one2many` | 专项或兼容评估                         |
 
 #### Pose 评估边界
 
@@ -129,12 +129,12 @@ env PYTHONPATH="$PWD" \
 
 输入 QAT `.pt` 时会按 checkpoint 的 quant config 重建 prepared graph，不能用普通 `YOLO(best.pt)` 代替。
 
-| 任务 | 必要参数 | QuantONNX 输出 |
-|---|---|---|
-| 检测 | 默认参数 | 三尺度 `boxes/scores`，共 6 个输出 |
-| 分割 | `--task segment` 与分割模型/权重 | 检测输出、mask coefficient、proto |
-| OBB | `--task obb` 与 OBB 模型/权重 | `boxes`、`scores`、`angle` |
-| Pose | `--task pose` 与 Pose 模型/权重 | `boxes`、`scores`、`keypoints` |
+| 任务 | 必要参数                          | QuantONNX 输出                            |
+| ---- | --------------------------------- | ----------------------------------------- |
+| 检测 | 默认参数                          | 三尺度 `boxes/scores`，共 6 个输出        |
+| 分割 | `--task segment` 与分割模型/权重  | 检测输出、mask coefficient、proto         |
+| OBB  | `--task obb` 与 OBB 模型/权重     | `boxes`、`scores`、`angle`                |
+| Pose | `--task pose` 与 Pose 模型/权重   | `boxes`、`scores`、`keypoints`            |
 | 分类 | `--task classify` 与分类模型/权重 | 单个 `logits`（host 端做 softmax/argmax） |
 
 Pose 的 `kpts_sigma` 只用于训练/RLE loss，不进入部署输出。

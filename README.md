@@ -11,16 +11,16 @@
 
 以下为当前 AXERA NPU 实测结果：
 
-| 模型 | `end2end` | 配置 | FP32 mAP50-95 | FP32 mAP50 | QAT mAP50-95 | QAT mAP50 | Err mAP:50~95 | Err mAP:50 | Speed(ms) |
-|---|---|---|---|---|---|---|---|---|---|
-| YOLO26n | `true` | ptq(w8a8_siluInU16) | 40.24 | 55.79 | 37.83 | 53.54 | -2.41 | -2.25 | 3.613 |
-| YOLO26n | `true` | `config_siluInU16_attnS8_clsU16.json` | 40.24 | 55.79 | 39.61 | 55.63 | -0.63 | -0.16 | 3.761 |
-| YOLO26n | `true` | `config_siluInU8_attnS8_clsU16.json` | 40.24 | 55.79 | 39.39 | 55.37 | -0.85 | -0.42 | 3.656 |
-| YOLO26n | `false` | ptq(w8a8_siluInU16) | 40.87 | 56.87 | 39.52 | 55.78 | -1.35  | -1.09 | 3.616 |
-| YOLO26n | `false` | `config_siluInU8_attnS8_clsU16_one2many.json` | 40.87 | 56.87 | 39.97 | 56.57 | -0.9 | -0.3 | 3.647 |
-| YOLO11n | `None` | ptq(w8a8_siluInU16) | 39.4 | 55.3 | 38.8 | 54.55 | -0.6 | -0.75 | 3.934 |
-| YOLO11n | `None` | `config_yolo11n_siluInU8_attnS8.json` | 39.4 | 55.3 | 38.45 | 54.46 | -0.95 | -0.84 | 3.814 |
-| YOLO11n | `None` | `config_yolo11n_siluInU16_attnS8.json` | 39.4 | 55.3 | 38.84 | 54.86 | -0.56 | -0.44 | 3.851 |
+| 模型    | `end2end` | 配置                                          | FP32 mAP50-95 | FP32 mAP50 | QAT mAP50-95 | QAT mAP50 | Err mAP:50~95 | Err mAP:50 | Speed(ms) |
+| ------- | --------- | --------------------------------------------- | ------------- | ---------- | ------------ | --------- | ------------- | ---------- | --------- |
+| YOLO26n | `true`    | ptq(w8a8_siluInU16)                           | 40.24         | 55.79      | 37.83        | 53.54     | -2.41         | -2.25      | 3.613     |
+| YOLO26n | `true`    | `config_siluInU16_attnS8_clsU16.json`         | 40.24         | 55.79      | 39.61        | 55.63     | -0.63         | -0.16      | 3.761     |
+| YOLO26n | `true`    | `config_siluInU8_attnS8_clsU16.json`          | 40.24         | 55.79      | 39.39        | 55.37     | -0.85         | -0.42      | 3.656     |
+| YOLO26n | `false`   | ptq(w8a8_siluInU16)                           | 40.87         | 56.87      | 39.52        | 55.78     | -1.35         | -1.09      | 3.616     |
+| YOLO26n | `false`   | `config_siluInU8_attnS8_clsU16_one2many.json` | 40.87         | 56.87      | 39.97        | 56.57     | -0.9          | -0.3       | 3.647     |
+| YOLO11n | `None`    | ptq(w8a8_siluInU16)                           | 39.4          | 55.3       | 38.8         | 54.55     | -0.6          | -0.75      | 3.934     |
+| YOLO11n | `None`    | `config_yolo11n_siluInU8_attnS8.json`         | 39.4          | 55.3       | 38.45        | 54.46     | -0.95         | -0.84      | 3.814     |
+| YOLO11n | `None`    | `config_yolo11n_siluInU16_attnS8.json`        | 39.4          | 55.3       | 38.84        | 54.86     | -0.56         | -0.44      | 3.851     |
 
 性能：AX650N NPU1 模式，采用 `ax_run_model -w 10 -r 100 -m <model>.axmodel` 测得。
 
@@ -30,10 +30,10 @@
 
 以下为 COCO-Seg 验证集上的 QAT 训练内最优结果。`seg_best` 已完成 QuantONNX 导出与 ORT 推理。
 
-| 模型 | `end2end` | 配置 | FP32 Box mAP50-95 | QAT Box mAP50-95 | Box 误差 | FP32 Mask mAP50-95 | QAT Mask mAP50-95 | Mask 误差 | epoch |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| YOLO26n-seg | `true` | `config_yolo26nSeg_siluInU16_attnS8.json` | 39.75 | 38.86 | -0.90 | 33.86 | 33.20 | -0.66 | 44（Box 峰值） |
-| YOLO26n-seg | `true` | `config_yolo26nSeg_siluInU16_attnS8.json` | 39.75 | 38.83 | -0.92 | 33.86 | 33.32 | -0.54 | 15（Mask 峰值） |
+| 模型        | `end2end` | 配置                                      | FP32 Box mAP50-95 | QAT Box mAP50-95 | Box 误差 | FP32 Mask mAP50-95 | QAT Mask mAP50-95 | Mask 误差 |           epoch |
+| ----------- | --------- | ----------------------------------------- | ----------------: | ---------------: | -------: | -----------------: | ----------------: | --------: | --------------: |
+| YOLO26n-seg | `true`    | `config_yolo26nSeg_siluInU16_attnS8.json` |             39.75 |            38.86 |    -0.90 |              33.86 |             33.20 |     -0.66 |  44（Box 峰值） |
+| YOLO26n-seg | `true`    | `config_yolo26nSeg_siluInU16_attnS8.json` |             39.75 |            38.83 |    -0.92 |              33.86 |             33.32 |     -0.54 | 15（Mask 峰值） |
 
 注：分割模型未上板测试，该指标为训练指标。
 
@@ -83,6 +83,7 @@ env PYTHONPATH="$PWD" \
 > **检测**（YOLO26n/YOLO11n）和**分割**（YOLO26n-seg）已完成正式精度实验，量化配置经过系统优化并通过上板精度评估，可作为交付基线。
 >
 > **OBB、Pose 和分类**目前仅完成主机侧链路 smoke（1 epoch、小数据集），当前量化配置（全局 SiLU U8 + Attention S8）**未经正式精度调优**，不保证在实际业务数据上能满足精度要求。使用前必须：
+>
 > 1. 在目标数据集上完整训练并评估 convert 真实 Q/DQ 精度；
 > 2. 若损失超出可接受范围，按 `$skill-yolo-qat-config-discovery` 重新发现局部量化边界；
 > 3. 通过 AXERA 板端评估后才能作为交付结论。
@@ -185,6 +186,7 @@ env PYTHONPATH="$PWD" CUDA_DEVICE_ORDER=PCI_BUS_ID \
 - **已支持**：Pulsar2 转换配置（`axera-npu/config_yolo26nCls_siluInU8_attnS8.json`，Attention S8）。
 - **⚠️ 仅链路验收，精度未调优**：当前量化配置未经正式精度优化，上板精度结论需使用目标 ImageNet 完整数据集重新训练验证。
 - **未接入**：AXERA 分类 Top-K 后处理和板端精度评估。
+
 #### 多 GPU 检测
 
 实验性多 GPU QAT 使用独立入口。`--batch` 是全局 batch，必须能被 GPU 数量整除；先用小数据 smoke
@@ -445,13 +447,13 @@ python \
 
 #### 任务输出契约
 
-| 任务 | QuantONNX 输出 | 评估入口 |
-|---|---|---|
-| 检测 | 三尺度 `boxes/scores`，共 6 个输出 | `eval.py onnx` |
+| 任务 | QuantONNX 输出                                 | 评估入口                        |
+| ---- | ---------------------------------------------- | ------------------------------- |
+| 检测 | 三尺度 `boxes/scores`，共 6 个输出             | `eval.py onnx`                  |
 | 分割 | 三尺度 `boxes/scores`、mask coefficient、proto | `eval.py segment`（checkpoint） |
-| OBB | `boxes`、`scores`、`angle` | `eval.py onnx-obb` |
-| Pose | `boxes`、`scores`、`keypoints` | `eval.py onnx-pose` |
-| 分类 | 单个 `logits`（host 端做 softmax/argmax） | `eval.py convert`（checkpoint） |
+| OBB  | `boxes`、`scores`、`angle`                     | `eval.py onnx-obb`              |
+| Pose | `boxes`、`scores`、`keypoints`                 | `eval.py onnx-pose`             |
+| 分类 | 单个 `logits`（host 端做 softmax/argmax）      | `eval.py convert`（checkpoint） |
 
 所有最终模型均需通过 ONNX checker 和目标运行时加载。检测交付模型还必须满足 BN、requant、Attention S8 和
 Split/Reshape 量化参数约束；其他任务按各自训练配置和输出契约验收，不得直接套用检测节点编号。
@@ -556,4 +558,5 @@ env PYTHONPATH="$PWD" \
 ```
 
 ## 模型部署
+
 请阅读 [qat_deployment.md](./axera-npu/qat_deployment.md)。

@@ -253,7 +253,7 @@ def try_export(inner_func):
             return f
         except Exception as e:
             LOGGER.error(f"{prefix} export failure {dt.t:.1f}s: {e}")
-            raise e
+            raise
 
     return outer_func
 
@@ -891,19 +891,19 @@ class Exporter:
         LOGGER.info(f"\n{prefix} starting export with NCNN {ncnn.__version__} and PNNX {pnnx.__version__}...")
         f = Path(str(self.file).replace(self.file.suffix, f"_ncnn_model{os.sep}"))
 
-        ncnn_args = dict(
-            ncnnparam=(f / "model.ncnn.param").as_posix(),
-            ncnnbin=(f / "model.ncnn.bin").as_posix(),
-            ncnnpy=(f / "model_ncnn.py").as_posix(),
-        )
+        ncnn_args = {
+            "ncnnparam": (f / "model.ncnn.param").as_posix(),
+            "ncnnbin": (f / "model.ncnn.bin").as_posix(),
+            "ncnnpy": (f / "model_ncnn.py").as_posix(),
+        }
 
-        pnnx_args = dict(
-            ptpath=(f / "model.pt").as_posix(),
-            pnnxparam=(f / "model.pnnx.param").as_posix(),
-            pnnxbin=(f / "model.pnnx.bin").as_posix(),
-            pnnxpy=(f / "model_pnnx.py").as_posix(),
-            pnnxonnx=(f / "model.pnnx.onnx").as_posix(),
-        )
+        pnnx_args = {
+            "ptpath": (f / "model.pt").as_posix(),
+            "pnnxparam": (f / "model.pnnx.param").as_posix(),
+            "pnnxbin": (f / "model.pnnx.bin").as_posix(),
+            "pnnxpy": (f / "model_pnnx.py").as_posix(),
+            "pnnxonnx": (f / "model.pnnx.onnx").as_posix(),
+        }
 
         f.mkdir(exist_ok=True)  # make ncnn_model directory
         pnnx.export(self.model, inputs=self.im, **ncnn_args, **pnnx_args, fp16=self.args.half, device=self.device.type)
@@ -1512,7 +1512,7 @@ class NMSModel(torch.nn.Module):
 
         preds = self.model(x)
         pred = preds[0] if isinstance(preds, tuple) else preds
-        kwargs = dict(device=pred.device, dtype=pred.dtype)
+        kwargs = {"device": pred.device, "dtype": pred.dtype}
         bs = pred.shape[0]
         pred = pred.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
         extra_shape = pred.shape[-1] - (4 + len(self.model.names))  # extras from Segment, OBB, Pose

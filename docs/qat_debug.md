@@ -12,34 +12,34 @@
 ### 本轮代码调整
 
 - 新增 `ultralytics/utils/pt2e_bn_patch.py`
-  - monkey patch `torch.ao.quantization.pt2e.export_utils` 和 `qat_utils`
-  - 保持 exported / prepared graph 中 BatchNorm 的 `momentum=0.03`、`eps=1e-3`
+    - monkey patch `torch.ao.quantization.pt2e.export_utils` 和 `qat_utils`
+    - 保持 exported / prepared graph 中 BatchNorm 的 `momentum=0.03`、`eps=1e-3`
 - 在 `ultralytics/utils/__init__.py` 启动时自动调用 `patch_pt2e_batchnorm_handling()`
 - 清理 `ultralytics/engine/model.py`
-  - 移除训练入口中的实验性 `export_for_training + onnx + exit()` 调试代码
-  - 恢复正常 `self.trainer.train()` 主流程
-  - 移除顶层 `onnx/onnxsim/onnxslim` 等可选依赖导入
+    - 移除训练入口中的实验性 `export_for_training + onnx + exit()` 调试代码
+    - 恢复正常 `self.trainer.train()` 主流程
+    - 移除顶层 `onnx/onnxsim/onnxslim` 等可选依赖导入
 - 调整 `ultralytics/engine/validator.py`
-  - 新增 trainer 上 `export_model / export_model_eval / qat_model` 的 PT2E 评估分支
-  - 对 exported/PT2E graph 先切 eval，再把原始输出重组为 validator 可消费的预测结构
+    - 新增 trainer 上 `export_model / export_model_eval / qat_model` 的 PT2E 评估分支
+    - 对 exported/PT2E graph 先切 eval，再把原始输出重组为 validator 可消费的预测结构
 - 调整 `ultralytics/engine/trainer.py`
-  - 增加 `export_model_eval` 状态位
-  - `read_results_csv()` 在无 `polars` 环境下回退到内置 `csv`，避免训练保存阶段无关失败
+    - 增加 `export_model_eval` 状态位
+    - `read_results_csv()` 在无 `polars` 环境下回退到内置 `csv`，避免训练保存阶段无关失败
 - 新增 `ultralytics/utils/qat_utils.py`
-  - 封装 PT2E QAT 准备流程
-  - 当前策略只保留 `N` 动态，固定 `H/W=imgsz`
+    - 封装 PT2E QAT 准备流程
+    - 当前策略只保留 `N` 动态，固定 `H/W=imgsz`
 - 调整 `ultralytics/engine/model.py`
-  - 增加 `qat=True` 正式入口
-  - 增加配置项：`qat`、`qat_config`、`qat_dynamic_batch_max`、`qat_validate`
+    - 增加 `qat=True` 正式入口
+    - 增加配置项：`qat`、`qat_config`、`qat_dynamic_batch_max`、`qat_validate`
 - 调整 `ultralytics/engine/trainer.py`
-  - `qat_model` 参与 optimizer / forward / grad clip
-  - `qat_model` 写入 checkpoint 元信息
-  - `qat_validate=False` 时跳过在线 validator 和 checkpoint-based final eval
+    - `qat_model` 参与 optimizer / forward / grad clip
+    - `qat_model` 写入 checkpoint 元信息
+    - `qat_validate=False` 时跳过在线 validator 和 checkpoint-based final eval
 - 新增 `tests/test_pt2e_bn_patch.py`
 - 新增 `tests/test_qat_engine.py`
-  - 增加 detect / segment 的 PT2E QAT 训练 + 在线验证 smoke test
-  - 测试显式使用 `qat=True, qat_validate=True`
-  - 标记为 `slow`
+    - 增加 detect / segment 的 PT2E QAT 训练 + 在线验证 smoke test
+    - 测试显式使用 `qat=True, qat_validate=True`
+    - 标记为 `slow`
 
 ### 已完成验证
 
@@ -65,13 +65,13 @@ python -m compileall ultralytics
 结果：
 
 - `exported_model`:
-  - before: `momentum=0.03`, `eps=0.001`
-  - after eval toggle: `training=False`, `momentum=0.03`, `eps=0.001`
+    - before: `momentum=0.03`, `eps=0.001`
+    - after eval toggle: `training=False`, `momentum=0.03`, `eps=0.001`
 - `prepared_model`:
-  - before eval: `momentum=0.03`, `eps=0.001`
-  - after eval: `momentum=0.03`, `eps=0.001`
+    - before eval: `momentum=0.03`, `eps=0.001`
+    - after eval: `momentum=0.03`, `eps=0.001`
 - 数值对齐：
-  - `prepared_vs_exported_eval_max_abs_diff = 2.384185791015625e-07`
+    - `prepared_vs_exported_eval_max_abs_diff = 2.384185791015625e-07`
 
 结论：
 
@@ -84,7 +84,7 @@ python -m compileall ultralytics
 命令：
 
 ```bash
-python - <<'PY'
+python - << 'PY'
 from tests.test_engine import test_detect
 test_detect()
 PY
@@ -101,7 +101,7 @@ PY
 命令：
 
 ```bash
-python - <<'PY'
+python - << 'PY'
 from ultralytics import YOLO
 
 model = YOLO('yolo26n.yaml')
@@ -135,7 +135,7 @@ PY
 命令：
 
 ```bash
-python - <<'PY'
+python - << 'PY'
 from ultralytics import YOLO
 
 model = YOLO('yolo26n.yaml')
@@ -168,16 +168,16 @@ PY
 - 之前的 reshape 报错不是 `Validator` 模式本身导致，而是 `val` dataloader 在 rect batching 下产出了 `64x64` 输入
 - 当前 PT2E QAT 图固定导出为 `32x32`，因此进入 YOLO26 head 后在 reshape 处失败
 - 修复方式：
-  - `ultralytics/models/yolo/detect/train.py`
-  - 当 `self.qat_model is not None` 且 `mode == "val"` 时禁用 rect batching
-  - 让 val loader 与 PT2E 图保持固定 `imgsz`
+    - `ultralytics/models/yolo/detect/train.py`
+    - 当 `self.qat_model is not None` 且 `mode == "val"` 时禁用 rect batching
+    - 让 val loader 与 PT2E 图保持固定 `imgsz`
 
 #### 6. YOLO26 segment QAT 训练 + 在线验证烟测
 
 命令：
 
 ```bash
-python - <<'PY'
+python - << 'PY'
 from ultralytics import YOLO
 
 model = YOLO('yolo26n-seg.yaml')
@@ -210,8 +210,8 @@ PY
 - YOLO26 `Segment26` 在 training graph 下的 `proto` 为 `(mask_proto, semseg)` tuple
 - `SegmentationValidator.postprocess()` 只接受 mask proto tensor
 - 修复方式：
-  - `ultralytics/engine/validator.py`
-  - PT2E 预测重组时，`loss_preds` 继续保留完整 `raw_preds`
+    - `ultralytics/engine/validator.py`
+    - PT2E 预测重组时，`loss_preds` 继续保留完整 `raw_preds`
 - 传给 validator 后处理的 `proto` 仅提取 tuple 第 0 项
 
 #### 7. QAT smoke test 脚本化
@@ -260,8 +260,8 @@ Suggested fixes:
 
 - 当前 validator 的 PT2E 分支已经接上，但正式 `prepare_qat` 入口必须使用更严格的 dynamic shape 策略
 - 对 YOLO26 当前最合理的策略应是：
-  - `N` 动态
-  - `H/W` 先固定在实际训练尺度，或只允许满足 stride/当前图约束的离散范围
+    - `N` 动态
+    - `H/W` 先固定在实际训练尺度，或只允许满足 stride/当前图约束的离散范围
 
 #### 2. detect validator reshape 错误已定位并修复
 
@@ -287,12 +287,12 @@ RuntimeError: shape '[2, 2, 128, 1]' is invalid for input of size 2048
 ### 当前判断
 
 - 本轮“对齐”已经完成 detect + segment 的训练闭环验证：
-  - BN patch 已接入并验证
-  - 训练入口已从实验态恢复到可用态
-  - validator 已具备 PT2E/exported model 接入点
+    - BN patch 已接入并验证
+    - 训练入口已从实验态恢复到可用态
+    - validator 已具备 PT2E/exported model 接入点
 - 已确认：
-  - `yolo26` detect 支持 `qat=True, qat_validate=True`
-  - `yolo26-seg` segment 支持 `qat=True, qat_validate=True`
+    - `yolo26` detect 支持 `qat=True, qat_validate=True`
+    - `yolo26-seg` segment 支持 `qat=True, qat_validate=True`
 - 当前默认 `qat_validate=False` 仍然保留，作为更保守的默认行为；需要在线验证时显式开启
 - 剩余重点更偏向泛化与工程化，而不是 detect/segment 当前 smoke 链路本身
 

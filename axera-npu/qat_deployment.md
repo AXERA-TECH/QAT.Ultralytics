@@ -7,13 +7,13 @@ Quantizer 新增配置能力、Attention S8 量化边界及自定义 YOLO26/YOLO
 
 ## 适用范围
 
-| 任务 | QuantONNX/ORT | Pulsar2 配置 | AXModel 后处理 |
-|---|---|---|---|
-| 检测 | 已支持 | 已支持 | `run_yolo_detect.py` |
-| 分割 | 已支持 | 已支持 | `run_yolo_seg.py` |
-| OBB | 已支持 | 基础配置（Attention S8） | 未接入 rotated NMS |
-| Pose | 已支持 | 基础配置（Attention S8） | 未接入关键点后处理 |
-| 分类 | 已支持 | 基础配置（Attention S8） | 未接入 Top-K 后处理 |
+| 任务 | QuantONNX/ORT | Pulsar2 配置             | AXModel 后处理       |
+| ---- | ------------- | ------------------------ | -------------------- |
+| 检测 | 已支持        | 已支持                   | `run_yolo_detect.py` |
+| 分割 | 已支持        | 已支持                   | `run_yolo_seg.py`    |
+| OBB  | 已支持        | 基础配置（Attention S8） | 未接入 rotated NMS   |
+| Pose | 已支持        | 基础配置（Attention S8） | 未接入关键点后处理   |
+| 分类 | 已支持        | 基础配置（Attention S8） | 未接入 Top-K 后处理  |
 
 > **任务输出契约**
 >
@@ -50,16 +50,16 @@ AXERA 转换配置必须与训练量化配置同名、不同目录。例如训�
 
 当前已核对的对应关系：
 
-| 模型 | 训练量化配置 | AXERA 转换配置 | Attention 数量 |
-|---|---|---|---:|
-| YOLO26n one-to-one、全局 SiLU U8 + Attention S8 + clsU16 | `config-qat/config_siluInU8_attnS8_clsU16.json` | `axera-npu/config_siluInU8_attnS8_clsU16.json` | 2 |
-| YOLO26n one-to-many、全局 SiLU U8 + Attention S8 + clsU16 | `config-qat/config_siluInU8_attnS8_clsU16_one2many.json` | `axera-npu/config_siluInU8_attnS8_clsU16_one2many.json` | 2 |
-| YOLO11n、全局 SiLU U8 + Attention S8 | `config-qat/config_yolo11n_siluInU8_attnS8.json` | `axera-npu/config_yolo11n_qat.json` | 1 |
-| YOLO11n、SiLU input U16 + Attention S8 | `config-qat/config_yolo11n_siluInU16_attnS8.json` | `axera-npu/config_yolo11n_siluInU16_attnS8.json` | 1 |
-| YOLO26n-seg、SiLU input U16 + Attention S8 | `config-qat/config_yolo26nSeg_siluInU16_attnS8.json` | `axera-npu/config_yolo26nSeg_siluInU16_attnS8.json` | 2 |
-| YOLO26n-cls、全局 SiLU U8 + Attention S8 | `config-qat/config_yolo26nCls_siluInU8_attnS8.json` | `axera-npu/config_yolo26nCls_siluInU8_attnS8.json` | 1 |
-| YOLO26n-Pose smoke、全局 SiLU U8 + Attention S8 | `config-qat/config_yolo26nPose_siluInU8_attnS8.json` | `axera-npu/config_yolo26nPose_siluInU8_attnS8.json` | 2 |
-| YOLO26n-OBB smoke、全局 SiLU U8 + Attention S8 | `config-qat/config_yolo26nObb_siluInU8_attnS8.json` | `axera-npu/config_yolo26nObb_siluInU8_attnS8.json` | 2 |
+| 模型                                                      | 训练量化配置                                             | AXERA 转换配置                                          | Attention 数量 |
+| --------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- | -------------: |
+| YOLO26n one-to-one、全局 SiLU U8 + Attention S8 + clsU16  | `config-qat/config_siluInU8_attnS8_clsU16.json`          | `axera-npu/config_siluInU8_attnS8_clsU16.json`          |              2 |
+| YOLO26n one-to-many、全局 SiLU U8 + Attention S8 + clsU16 | `config-qat/config_siluInU8_attnS8_clsU16_one2many.json` | `axera-npu/config_siluInU8_attnS8_clsU16_one2many.json` |              2 |
+| YOLO11n、全局 SiLU U8 + Attention S8                      | `config-qat/config_yolo11n_siluInU8_attnS8.json`         | `axera-npu/config_yolo11n_qat.json`                     |              1 |
+| YOLO11n、SiLU input U16 + Attention S8                    | `config-qat/config_yolo11n_siluInU16_attnS8.json`        | `axera-npu/config_yolo11n_siluInU16_attnS8.json`        |              1 |
+| YOLO26n-seg、SiLU input U16 + Attention S8                | `config-qat/config_yolo26nSeg_siluInU16_attnS8.json`     | `axera-npu/config_yolo26nSeg_siluInU16_attnS8.json`     |              2 |
+| YOLO26n-cls、全局 SiLU U8 + Attention S8                  | `config-qat/config_yolo26nCls_siluInU8_attnS8.json`      | `axera-npu/config_yolo26nCls_siluInU8_attnS8.json`      |              1 |
+| YOLO26n-Pose smoke、全局 SiLU U8 + Attention S8           | `config-qat/config_yolo26nPose_siluInU8_attnS8.json`     | `axera-npu/config_yolo26nPose_siluInU8_attnS8.json`     |              2 |
+| YOLO26n-OBB smoke、全局 SiLU U8 + Attention S8            | `config-qat/config_yolo26nObb_siluInU8_attnS8.json`      | `axera-npu/config_yolo26nObb_siluInU8_attnS8.json`      |              2 |
 
 - 使用 `$axera-quantonnx-config` 从该 ONNX 自动生成或复核配置，再只修改输出目录和工具链要求的输入/输出字段。
 - QuantONNX 已携带 Q/DQ 参数，不需要校准集；配置中的 `/path/to/dataset` 仅为 Pulsar2 必填字段的占位值。
@@ -141,13 +141,13 @@ YOLO11n 检测使用 `axera-npu/config_yolo11n_qat.json`（或 `config_yolo11n_s
 
 ### 可用脚本
 
-| 脚本 | 任务 | 输出 |
-|---|---|---|
-| `run_yolo_detect.py` | YOLO26/YOLO11 检测 | 检测 JSON |
-| `run_yolo_seg.py` | 分割 | 检测与 mask JSON |
-| `test.py --task obb` / `eval.py onnx-obb` | OBB 主机侧验证 | 旋转框 |
-| `test.py --task pose` / `eval.py onnx-pose` | Pose 主机侧验证 | 检测框与关键点 |
-| `test.py --task classify` | 分类主机侧验证 | 单个 `logits`（host 端 softmax → Top-K） |
+| 脚本                                        | 任务               | 输出                                     |
+| ------------------------------------------- | ------------------ | ---------------------------------------- |
+| `run_yolo_detect.py`                        | YOLO26/YOLO11 检测 | 检测 JSON                                |
+| `run_yolo_seg.py`                           | 分割               | 检测与 mask JSON                         |
+| `test.py --task obb` / `eval.py onnx-obb`   | OBB 主机侧验证     | 旋转框                                   |
+| `test.py --task pose` / `eval.py onnx-pose` | Pose 主机侧验证    | 检测框与关键点                           |
+| `test.py --task classify`                   | 分类主机侧验证     | 单个 `logits`（host 端 softmax → Top-K） |
 
 OBB、Pose 和分类尚无独立 AXModel 推理脚本。
 

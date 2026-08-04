@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 from pathlib import Path
@@ -6,7 +8,6 @@ os.environ.setdefault("ULTRALYTICS_SKIP_DATASET_HASH", "1")
 
 from ultralytics import YOLO
 from ultralytics.data.utils import check_det_dataset
-
 
 ROOT = Path(__file__).resolve().parent
 PROFILES = {
@@ -22,7 +23,9 @@ PROFILES = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a YOLO PT2E QAT model with a delivery profile or custom config.")
+    parser = argparse.ArgumentParser(
+        description="Train a YOLO PT2E QAT model with a delivery profile or custom config."
+    )
     parser.add_argument("--profile", choices=sorted(PROFILES), default=None, help="Optional YOLO26 delivery shortcut.")
     parser.add_argument("--quant-config", metavar="PATH", help="QAT JSON config. Takes precedence over --profile.")
     parser.add_argument("--task", choices=("detect", "segment", "obb", "pose", "classify"), default="detect")
@@ -87,25 +90,25 @@ def main() -> None:
             kwargs["data_kpt_shape"] = data["kpt_shape"]
         model.model = model.task_map[args.task]["model"](args.model, **kwargs)
     model.load(args.pretrained)
-    train_kwargs = dict(
-        data=args.data,
-        batch=args.batch,
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        workers=args.workers,
-        device=args.device,
-        project=resolve_project_dir(args.project, args.task),
-        name=args.name or default_name,
-        exist_ok=args.exist_ok,
-        qat=True,
-        qat_config=str(config),
-        qat_validate=args.qat_validate,
-        qat_ema=args.qat_ema,
-        save_period=args.save_period,
-        fraction=args.fraction,
-        lr0=args.lr0,
-        lrf=args.lrf,
-    )
+    train_kwargs = {
+        "data": args.data,
+        "batch": args.batch,
+        "epochs": args.epochs,
+        "imgsz": args.imgsz,
+        "workers": args.workers,
+        "device": args.device,
+        "project": resolve_project_dir(args.project, args.task),
+        "name": args.name or default_name,
+        "exist_ok": args.exist_ok,
+        "qat": True,
+        "qat_config": str(config),
+        "qat_validate": args.qat_validate,
+        "qat_ema": args.qat_ema,
+        "save_period": args.save_period,
+        "fraction": args.fraction,
+        "lr0": args.lr0,
+        "lrf": args.lrf,
+    }
     if args.task != "classify":
         # end2end selects the one2one/one2many detection head path; classification has no such branch.
         train_kwargs["end2end"] = args.end2end

@@ -23,24 +23,38 @@
       },
       {
         "layer_names": [
-          "node_Reshape_732", "node_Split_2133", "node_Transpose_753",  "node_MatMul_759", "node_Mul_768", "node_Softmax_774", "node_Transpose_780", "node_Reshape_809",
-          "node_Reshape_1562","node_Split_2154", "node_Transpose_1581", "node_MatMul_1587", "node_Mul_1595", "node_Softmax_1601", "node_Transpose_1607", "node_Reshape_1636"
-          ],
+          "node_Reshape_732",
+          "node_Split_2133",
+          "node_Transpose_753",
+          "node_MatMul_759",
+          "node_Mul_768",
+          "node_Softmax_774",
+          "node_Transpose_780",
+          "node_Reshape_809",
+          "node_Reshape_1562",
+          "node_Split_2154",
+          "node_Transpose_1581",
+          "node_MatMul_1587",
+          "node_Mul_1595",
+          "node_Softmax_1601",
+          "node_Transpose_1607",
+          "node_Reshape_1636"
+        ],
         "data_type": "S8",
-        "output_data_type": "S8"  
+        "output_data_type": "S8"
       },
       {
         "layer_names": ["node_Conv_720", "node_Conv_1550"],
-        "output_data_type": "S8"  
-      },    
+        "output_data_type": "S8"
+      },
       {
         "layer_names": ["node_MatMul_785", "node_Conv_816", "node_MatMul_1612", "node_Conv_1643"],
         "data_type": "S8"
-      }  
+      }
     ],
     "conv_bias_data_type": "FP32",
     "precision_analysis": true,
-    "precision_analysis_method":"PerLayer",
+    "precision_analysis_method": "PerLayer",
     "precision_analysis_mode": "NPUBackend"
   },
   "input_processors": [
@@ -53,8 +67,7 @@
       "std": [1, 1, 1]
     }
   ],
-  "output_processors": [
-  ],
+  "output_processors": [],
   "compiler": {
     // "npu_perf": true,
     "check": 2

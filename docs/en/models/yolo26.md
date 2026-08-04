@@ -263,20 +263,20 @@ YOLOE-26 supports both text-based and visual prompting. Using prompts is straigh
 
         # Define visual prompts using bounding boxes and their corresponding class IDs.
         # Each box highlights an example of the object you want the model to detect.
-        visual_prompts = dict(
-            bboxes=np.array(
+        visual_prompts = {
+            "bboxes": np.array(
                 [
                     [221.52, 405.8, 344.98, 857.54],  # Box enclosing person
                     [120, 425, 160, 445],  # Box enclosing glasses
                 ],
             ),
-            cls=np.array(
+            "cls": np.array(
                 [
                     0,  # ID to be assigned for person
                     1,  # ID to be assigned for glasses
                 ]
             ),
-        )
+        }
 
         # Run inference on an image, using the provided visual prompts as guidance
         results = model.predict(

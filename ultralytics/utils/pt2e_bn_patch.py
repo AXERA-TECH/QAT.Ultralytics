@@ -3,7 +3,6 @@ import os
 import torch
 import torch.nn.functional as F
 
-
 BN_EPS = float(os.getenv("ULTRALYTICS_PT2E_BN_EPS", "1e-3"))
 BN_MOMENTUM = float(os.getenv("ULTRALYTICS_PT2E_BN_MOMENTUM", "0.03"))
 
@@ -37,13 +36,12 @@ def _toggle_exported_batch_norm_nodes(model: torch.fx.GraphModule, training: boo
 
 
 def patch_pt2e_batchnorm_handling() -> bool:
-    """
-    Monkey patch PT2E exported BN train/eval switching to preserve custom eps and momentum.
+    """Monkey patch PT2E exported BN train/eval switching to preserve custom eps and momentum.
 
     Torch 2.6 `torch.ao.quantization.pt2e.export_utils._replace_batchnorm` rewrites exported batchnorm nodes with
     hard-coded default `momentum=0.1` and `eps=1e-5`. Ultralytics models initialize BN with `momentum=0.03` and
-    `eps=1e-3`, so QAT/export validation can regress significantly after calling
-    `move_exported_model_to_eval()` or `allow_exported_model_train_eval()`.
+    `eps=1e-3`, so QAT/export validation can regress significantly after calling `move_exported_model_to_eval()` or
+    `allow_exported_model_train_eval()`.
     """
     try:
         from torch.ao.quantization.pt2e import export_utils, qat_utils
@@ -246,9 +244,7 @@ def patch_pt2e_batchnorm_handling() -> bool:
         qat_utils._get_qat_conv_bn_pattern = _get_qat_conv_bn_pattern_preserve_hparams
         qat_utils._get_qat_conv_bn_pattern_no_conv_bias = _get_qat_conv_bn_pattern_no_conv_bias_preserve_hparams
         qat_utils._get_quantized_qat_conv_bn_pattern = _get_quantized_qat_conv_bn_pattern_preserve_hparams
-        qat_utils._get_folded_quantized_qat_conv_bn_pattern = (
-            _get_folded_quantized_qat_conv_bn_pattern_preserve_hparams
-        )
+        qat_utils._get_folded_quantized_qat_conv_bn_pattern = _get_folded_quantized_qat_conv_bn_pattern_preserve_hparams
         setattr(qat_utils, _QAT_PATCH_FLAG, True)
         changed = True
 

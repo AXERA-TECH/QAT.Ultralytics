@@ -31,12 +31,8 @@ def _make_split_reshape_model() -> onnx.ModelProto:
         helper.make_node(
             "DequantizeLinear", ["reshape_q", "reshape_scale", "reshape_zp"], ["reshape_dq"], name="reshape_dq"
         ),
-        helper.make_node(
-            "QuantizeLinear", ["split_2", "reshape_scale", "reshape_zp"], ["other_q"], name="other_q"
-        ),
-        helper.make_node(
-            "DequantizeLinear", ["other_q", "reshape_scale", "reshape_zp"], ["other_dq"], name="other_dq"
-        ),
+        helper.make_node("QuantizeLinear", ["split_2", "reshape_scale", "reshape_zp"], ["other_q"], name="other_q"),
+        helper.make_node("DequantizeLinear", ["other_q", "reshape_scale", "reshape_zp"], ["other_dq"], name="other_dq"),
     ]
     graph = helper.make_graph(
         nodes,

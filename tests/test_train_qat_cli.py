@@ -49,11 +49,16 @@ def test_relative_project_is_resolved_inside_repository(module):
 
 def test_train_qat_accepts_pose_task():
     parser_args = [
-        "--task", "pose",
-        "--model", "yolo26n-pose.yaml",
-        "--pretrained", "weights/yolo26n-pose.pt",
-        "--data", "coco8-pose.yaml",
-        "--quant-config", "config-qat/config.json",
+        "--task",
+        "pose",
+        "--model",
+        "yolo26n-pose.yaml",
+        "--pretrained",
+        "weights/yolo26n-pose.pt",
+        "--data",
+        "coco8-pose.yaml",
+        "--quant-config",
+        "config-qat/config.json",
     ]
 
     import sys
@@ -70,11 +75,16 @@ def test_train_qat_accepts_pose_task():
 
 def test_train_qat_accepts_classify_task():
     parser_args = [
-        "--task", "classify",
-        "--model", "yolo26n-cls.yaml",
-        "--pretrained", "weights/yolo26n-cls.pt",
-        "--data", "imagenet10",
-        "--quant-config", "config-qat/config.json",
+        "--task",
+        "classify",
+        "--model",
+        "yolo26n-cls.yaml",
+        "--pretrained",
+        "weights/yolo26n-cls.pt",
+        "--data",
+        "imagenet10",
+        "--quant-config",
+        "config-qat/config.json",
     ]
 
     import sys

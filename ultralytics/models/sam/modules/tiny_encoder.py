@@ -14,8 +14,8 @@ from __future__ import annotations
 import itertools
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 from ultralytics.nn.modules import LayerNorm2d
 from ultralytics.utils.instance import to_2tuple
@@ -838,21 +838,21 @@ class TinyViT(nn.Module):
         # Build layers
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
-            kwargs = dict(
-                dim=embed_dims[i_layer],
-                input_resolution=(
+            kwargs = {
+                "dim": embed_dims[i_layer],
+                "input_resolution": (
                     patches_resolution[0] // (2 ** (i_layer - 1 if i_layer == 3 else i_layer)),
                     patches_resolution[1] // (2 ** (i_layer - 1 if i_layer == 3 else i_layer)),
                 ),
                 #   input_resolution=(patches_resolution[0] // (2 ** i_layer),
                 #                     patches_resolution[1] // (2 ** i_layer)),
-                depth=depths[i_layer],
-                drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
-                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
-                use_checkpoint=use_checkpoint,
-                out_dim=embed_dims[min(i_layer + 1, len(embed_dims) - 1)],
-                activation=activation,
-            )
+                "depth": depths[i_layer],
+                "drop_path": dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
+                "downsample": PatchMerging if (i_layer < self.num_layers - 1) else None,
+                "use_checkpoint": use_checkpoint,
+                "out_dim": embed_dims[min(i_layer + 1, len(embed_dims) - 1)],
+                "activation": activation,
+            }
             if i_layer == 0:
                 layer = ConvLayer(conv_expand_ratio=mbconv_expand_ratio, **kwargs)
             else:
@@ -962,8 +962,10 @@ class TinyViT(nn.Module):
         """Perform the forward pass through the TinyViT model, extracting features from the input image."""
         return self.forward_features(x)
 
-    def set_imgsz(self, imgsz: list[int] = [1024, 1024]):
+    def set_imgsz(self, imgsz: list[int] | None = None):
         """Set image size to make model compatible with different image sizes."""
+        if imgsz is None:
+            imgsz = [1024, 1024]
         imgsz = [s // 4 for s in imgsz]
         self.patches_resolution = imgsz
         for i, layer in enumerate(self.layers):

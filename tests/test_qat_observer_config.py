@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.ao.quantization.fake_quantize import FakeQuantize, FusedMovingAvgObsFakeQuantize
 from torch.ao.quantization.observer import HistogramObserver, MovingAverageMinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
@@ -90,17 +90,14 @@ def test_accuracy_attention_s8_delivery_config_contract():
     assert silu["module_config"]["output"] == {"dtype": "U8", "qmin": 0, "qmax": 255}
 
     shared_head_silu = next(
-        item
-        for item in regional
-        if item["module_type"] == "silu" and item["module_names"] == ["silu__68"]
+        item for item in regional if item["module_type"] == "silu" and item["module_names"] == ["silu__68"]
     )
     assert shared_head_silu["module_config"]["output"] == {"dtype": "U16", "qmin": 0, "qmax": 65535}
 
     tower_silu = next(
         item
         for item in regional
-        if item["module_type"] == "silu"
-        and item["module_names"] == [f"silu__{index}" for index in range(97, 105)]
+        if item["module_type"] == "silu" and item["module_names"] == [f"silu__{index}" for index in range(97, 105)]
     )
     assert tower_silu["module_config"]["input"] == {"dtype": "U16", "qmin": 0, "qmax": 65535}
     assert tower_silu["module_config"]["output"] == {"dtype": "U16", "qmin": 0, "qmax": 65535}
@@ -132,9 +129,7 @@ def test_accuracy_attention_s8_delivery_config_contract():
     assert output_conv["module_config"]["output"] == {"dtype": "U16", "qmin": 0, "qmax": 65535}
 
     first_matmul = next(
-        item
-        for item in regional
-        if item["module_type"] == "matmul" and item["module_names"] == ["matmul", "matmul_2"]
+        item for item in regional if item["module_type"] == "matmul" and item["module_names"] == ["matmul", "matmul_2"]
     )
     assert first_matmul["module_config"]["output"] == {"dtype": "S8", "qmin": -127, "qmax": 127}
     attention_mul = next(item for item in regional if item["module_type"] == "mul")
@@ -142,18 +137,20 @@ def test_accuracy_attention_s8_delivery_config_contract():
     assert attention_mul["module_config"]["output"] == {"dtype": "S8", "qmin": -127, "qmax": 127}
 
     shared_head_conv = next(
-        item
-        for item in regional
-        if item["module_type"] == "conv" and item["module_names"] == ["conv2d_108"]
+        item for item in regional if item["module_type"] == "conv" and item["module_names"] == ["conv2d_108"]
     )
     assert shared_head_conv["module_config"]["input"] == {"dtype": "U16", "qmin": 0, "qmax": 65535}
     assert "output" not in shared_head_conv["module_config"]
 
     qkv_conv = next(
-        item for item in regional if item["module_type"] == "conv" and item["module_names"] == ["conv2d_34", "conv2d_72"]
+        item
+        for item in regional
+        if item["module_type"] == "conv" and item["module_names"] == ["conv2d_34", "conv2d_72"]
     )
     pe_conv = next(
-        item for item in regional if item["module_type"] == "conv" and item["module_names"] == ["conv2d_35", "conv2d_73"]
+        item
+        for item in regional
+        if item["module_type"] == "conv" and item["module_names"] == ["conv2d_35", "conv2d_73"]
     )
     assert qkv_conv["module_config"]["output"] == {"dtype": "S8", "qmin": -127, "qmax": 127}
     assert pe_conv["module_config"]["input"] == {"dtype": "S8", "qmin": -127, "qmax": 127}
@@ -165,9 +162,7 @@ def test_throughput_only_changes_global_silu_input_to_u8():
     throughput = json.loads((root / "config-qat/config_siluInU8_attnS8_clsU16.json").read_text())
 
     accuracy_global_silu = next(
-        item
-        for item in accuracy["regional_configs"]
-        if item["module_type"] == "silu" and item["module_names"] is None
+        item for item in accuracy["regional_configs"] if item["module_type"] == "silu" and item["module_names"] is None
     )
     throughput_global_silu = next(
         item
@@ -184,9 +179,7 @@ def test_throughput_only_changes_global_silu_input_to_u8():
         for item in normalized_throughput["regional_configs"]
         if item["module_type"] == "silu" and item["module_names"] is None
     )
-    normalized_global_silu["module_config"]["input"] = copy.deepcopy(
-        accuracy_global_silu["module_config"]["input"]
-    )
+    normalized_global_silu["module_config"]["input"] = copy.deepcopy(accuracy_global_silu["module_config"]["input"])
     assert normalized_throughput == accuracy
 
 
@@ -213,9 +206,7 @@ def test_attention_base_config_only_omits_optional_cls_u16_entries(base_name, co
         )
 
     expected = copy.deepcopy(combined)
-    expected["regional_configs"] = [
-        item for item in expected["regional_configs"] if not is_cls_u16_entry(item)
-    ]
+    expected["regional_configs"] = [item for item in expected["regional_configs"] if not is_cls_u16_entry(item)]
     assert base == expected
 
 

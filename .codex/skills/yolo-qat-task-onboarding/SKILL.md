@@ -63,7 +63,7 @@ loss, loss_items = unwrap_model(trainer.model).loss(batch, preds, teacher_preds=
 
 ```bash
 env PYTHONPATH="$PWD" CUDA_DEVICE_ORDER=PCI_BUS_ID \
-python train_qat.py \
+  python train_qat.py \
   --task obb --model yolo26-obb.yaml --pretrained weights/yolo26n-obb.pt \
   --data dota8.yaml --quant-config config-qat/config.json \
   --device 0 --epochs 1 --batch 1 --imgsz 640 --workers 0 \

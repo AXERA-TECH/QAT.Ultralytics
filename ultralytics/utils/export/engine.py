@@ -16,8 +16,8 @@ def torch2onnx(
     im: torch.Tensor,
     onnx_file: str,
     opset: int = 14,
-    input_names: list[str] = ["images"],
-    output_names: list[str] = ["output0"],
+    input_names: list[str] | None = None,
+    output_names: list[str] | None = None,
     dynamic: bool | dict = False,
 ) -> None:
     """Export a PyTorch model to ONNX format.
@@ -34,6 +34,10 @@ def torch2onnx(
     Notes:
         Setting `do_constant_folding=True` may cause issues with DNN inference for torch>=1.12.
     """
+    if output_names is None:
+        output_names = ["output0"]
+    if input_names is None:
+        input_names = ["images"]
     kwargs = {"dynamo": False} if TORCH_2_4 else {}
     torch.onnx.export(
         torch_model,

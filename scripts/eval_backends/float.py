@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""统一 float baseline eval（替代 eval_float_o2o.py / eval_float_o2o_v2.py）。
+"""统一 float baseline eval（替代 eval_float_o2o.py / eval_float_o2o_v2.py）。.
 
 float 模型走标准 model.val（head.forward 的 fuse+eval bug 已修：one2many 空守卫），
 不需要 PT2E prepare。与 `eval.py qat` 使用相同口径参数，保证 QAT vs float 同口径对比。
@@ -13,7 +13,9 @@ float 模型走标准 model.val（head.forward 的 fuse+eval bug 已修：one2ma
   python eval.py float --weights yolo26n.pt --device 2
   python eval.py float --weights yolo26n.pt --end2end False --rect True
 """
+
 import os
+
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # ordinal=nvidia-smi index
 import argparse
 import warnings
@@ -55,15 +57,30 @@ def main():
     print(f"[eval float] {tag}  rect={a.rect}  pycoco={a.pycoco}  weights={a.weights}", flush=True)
 
     m = YOLO(a.weights)
-    r = m.val(data=a.data, imgsz=a.imgsz, batch=a.batch, device=a.device, end2end=a.end2end,
-              conf=0.001, iou=0.7, rect=a.rect, save_json=a.pycoco, half=False, plots=False, verbose=False)
+    r = m.val(
+        data=a.data,
+        imgsz=a.imgsz,
+        batch=a.batch,
+        device=a.device,
+        end2end=a.end2end,
+        conf=0.001,
+        iou=0.7,
+        rect=a.rect,
+        save_json=a.pycoco,
+        half=False,
+        plots=False,
+        verbose=False,
+    )
 
     print("\n" + "=" * 60, flush=True)
     print(f">>> FLOAT {tag}  rect={a.rect}", flush=True)
     print(f"    ultralytics-metric  mAP50-95={r.box.map:.4f}  mAP50={r.box.map50:.4f}", flush=True)
     if getattr(r, "pose", None) is not None:
         print(f"    pose-metric         mAP50-95={r.pose.map:.4f}  mAP50={r.pose.map50:.4f}", flush=True)
-    print("    pycocotools/COCO    见上方 'Evaluating ... COCO' 段（save_json=True 自动触发）" if a.pycoco else "", flush=True)
+    print(
+        "    pycocotools/COCO    见上方 'Evaluating ... COCO' 段（save_json=True 自动触发）" if a.pycoco else "",
+        flush=True,
+    )
     print("=" * 60, flush=True)
     print("EVAL_FLOAT_DONE", flush=True)
 

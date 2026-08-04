@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import time
@@ -8,17 +10,87 @@ import cv2
 import numpy as np
 import tqdm
 
-
 COCO80_NAMES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
-    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
-    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
-    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard",
-    "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
-    "scissors", "teddy bear", "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 
@@ -40,13 +112,19 @@ def create_inference_session(model_path: str, runtime: str):
                 raise
 
     if runtime == "axengine":
-        raise RuntimeError("axengine is not installed; install the Axera runtime or use --runtime onnxruntime.") from axengine_error
+        raise RuntimeError(
+            "axengine is not installed; install the Axera runtime or use --runtime onnxruntime."
+        ) from axengine_error
 
     try:
         import onnxruntime as ort
     except ImportError as error:
         raise RuntimeError("onnxruntime is not installed; install it or use --runtime axengine.") from error
-    providers = [provider for provider in ("CUDAExecutionProvider", "CPUExecutionProvider") if provider in ort.get_available_providers()]
+    providers = [
+        provider
+        for provider in ("CUDAExecutionProvider", "CPUExecutionProvider")
+        if provider in ort.get_available_providers()
+    ]
     return ort.InferenceSession(model_path, providers=providers or ["CPUExecutionProvider"]), "onnxruntime"
 
 
@@ -62,7 +140,7 @@ def draw_detections(image, boxes_xyxy, scores, classes, class_names, conf_thres=
         if score < conf_thres:
             continue
         cls_id = int(classes[i])
-        x1, y1, x2, y2 = (int(round(float(v))) for v in boxes_xyxy[i])
+        x1, y1, x2, y2 = (round(float(v)) for v in boxes_xyxy[i])
         color = _color_for_class(cls_id)
         cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
         name = class_names[cls_id] if 0 <= cls_id < len(class_names) else str(cls_id)
@@ -70,20 +148,94 @@ def draw_detections(image, boxes_xyxy, scores, classes, class_names, conf_thres=
         (tw, th), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         y_top = max(y1, th + bl + 2)
         cv2.rectangle(vis, (x1, y_top - th - bl - 2), (x1 + tw + 2, y_top), color, -1)
-        cv2.putText(vis, label, (x1 + 1, y_top - bl - 1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            vis, label, (x1 + 1, y_top - bl - 1), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA
+        )
     return vis
 
 
 def coco80_to_coco91_class() -> list[int]:
     return [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-        11, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-        22, 23, 24, 25, 27, 28, 31, 32, 33, 34,
-        35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-        46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
-        56, 57, 58, 59, 60, 61, 62, 63, 64, 65,
-        67, 70, 72, 73, 74, 75, 76, 77, 78, 79,
-        80, 81, 82, 84, 85, 86, 87, 88, 89, 90,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        27,
+        28,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        67,
+        70,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
     ]
 
 
@@ -129,9 +281,7 @@ class LetterBox:
         bottom = round(dh + 0.1)
         left = round(dw - 0.1) if self.center else 0
         right = round(dw + 0.1)
-        return cv2.copyMakeBorder(
-            image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(self.padding_value,) * 3
-        )
+        return cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(self.padding_value,) * 3)
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -170,8 +320,8 @@ def scale_boxes(img1_shape: tuple[int, int], boxes: np.ndarray, img0_shape: tupl
 def split_detection_outputs(outputs: list[np.ndarray], num_classes: int) -> list[tuple[np.ndarray, np.ndarray]]:
     """Pair P3/P4/P5 regression and classification tensors by anchor count, not ONNX output name/order.
 
-    C++ ports should apply the same rule: classification tensors use C=num_classes; regression tensors use C=4
-    (YOLO26) or C=4*reg_max (YOLO11). The matching N dimension identifies the corresponding feature scale.
+    C++ ports should apply the same rule: classification tensors use C=num_classes; regression tensors use C=4 (YOLO26)
+    or C=4*reg_max (YOLO11). The matching N dimension identifies the corresponding feature scale.
     """
     regression, classification = {}, {}
     for output in outputs:
@@ -208,8 +358,7 @@ def decode_yolo26_distances(regression: np.ndarray) -> np.ndarray:
 def decode_yolo11_dfl(regression: np.ndarray) -> np.ndarray:
     """Decode YOLO11 [1, 4*reg_max, N] DFL logits to [N, left, top, right, bottom].
 
-    For every anchor and side, the C++ equivalent is:
-    ``distance = sum(softmax(logits[0:reg_max]) * bin_index)``.
+    For every anchor and side, the C++ equivalent is: ``distance = sum(softmax(logits[0:reg_max]) * bin_index)``.
     """
     if regression.ndim != 3 or regression.shape[0] != 1:
         raise ValueError(f"Expected BCN regression tensor, got {regression.shape}")
@@ -300,8 +449,8 @@ def decode_yolo_detection(
 ) -> np.ndarray:
     """Decode six raw YOLO26/YOLO11 outputs into xyxy, score and class predictions.
 
-    YOLO26 one-to-one uses head top-k selection, while YOLO26 one-to-many and YOLO11 use class-aware NMS. In auto
-    mode, DFL regression and the stable ``boxes_p*``/``scores_p*`` output names select one-to-many.
+    YOLO26 one-to-one uses head top-k selection, while YOLO26 one-to-many and YOLO11 use class-aware NMS. In auto mode,
+    DFL regression and the stable ``boxes_p*``/``scores_p*`` output names select one-to-many.
     """
     if input_hw[0] != input_hw[1]:
         raise ValueError(f"Only square detection inputs are supported, got {input_hw}")
@@ -414,9 +563,7 @@ class YOLODetectPredictor:
         classes = pred[:, 5].astype(np.int32)
         if self.save_vis and self.vis_count < self.vis_limit:
             vis_xyxy = pred[:, :4]
-            vis_img = draw_detections(
-                meta["orig_image"], vis_xyxy, scores, classes, self.class_names, self.vis_conf
-            )
+            vis_img = draw_detections(meta["orig_image"], vis_xyxy, scores, classes, self.class_names, self.vis_conf)
             cv2.imwrite(str(Path(self.save_vis) / f"{meta['image_name']}.jpg"), vis_img)
             self.vis_count += 1
         image_id = int(meta["image_name"]) if meta["image_name"].isnumeric() else meta["image_name"]
@@ -465,7 +612,9 @@ def parse_args():
         help="auto prefers axengine when installed; onnxruntime uses CUDA/CPU providers.",
     )
     parser.add_argument("--limit", type=int, default=0, help="Only run the first N images, 0 means all.")
-    parser.add_argument("--save-vis", type=str, default="", help="Directory to save visualized detections; empty disables.")
+    parser.add_argument(
+        "--save-vis", type=str, default="", help="Directory to save visualized detections; empty disables."
+    )
     parser.add_argument("--vis-conf", type=float, default=0.25, help="Confidence threshold for drawn boxes.")
     parser.add_argument("--vis-limit", type=int, default=50, help="Max number of images to visualize.")
     return parser.parse_args()

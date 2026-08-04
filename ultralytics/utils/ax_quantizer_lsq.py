@@ -1,21 +1,15 @@
 # mypy: allow-untyped-defs
 from __future__ import annotations
 
-import copy
-import json
-import functools
 import dataclasses
-from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, Any
 
 import torch
-import torch._dynamo as torchdynamo
-import torch.nn.functional as F
-from torch import Tensor
+from torch.ao.quantization._learnable_fake_quantize import _LearnableFakeQuantize
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
-    FusedMovingAvgObsFakeQuantize,
 )
-from torch.ao.quantization import observer, ObserverOrFakeQuantize
 from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
@@ -24,20 +18,15 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer, DerivedQuantizationSpec
-from torch.ao.quantization.quantizer.utils import _get_module_name_filter
-from ultralytics.utils.ax_quantizer_utils import (
-    _convert_scalars_to_attrs,
-    OP_TO_ANNOTATOR,
-    OperatorConfig,
-    OperatorPatternType,
-    propagate_annotation,
-    QuantizationConfig,
-    annotate_bias,
-)
-from torch.fx import Node
+from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
 
-from torch.ao.quantization._learnable_fake_quantize import _LearnableFakeQuantize 
+from ultralytics.utils.ax_quantizer_utils import (
+    OP_TO_ANNOTATOR,
+    QuantizationConfig,
+    _convert_scalars_to_attrs,
+    annotate_bias,
+    propagate_annotation,
+)
 
 if TYPE_CHECKING:
     from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
@@ -46,8 +35,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AXQuantizer",
-    "get_symmetric_quantization_config",
     "get_quantization_config",
+    "get_symmetric_quantization_config",
 ]
 
 
@@ -86,15 +75,10 @@ class QuantizerRegionalConf:
 
 # @functools.lru_cache
 def get_quantization_config(
-    is_symmetric: bool = False,
-    is_qat: bool = True,
-    is_dynamic: bool = False,
-    quant_config: QuantConf = None
+    is_symmetric: bool = False, is_qat: bool = True, is_dynamic: bool = False, quant_config: QuantConf = None
 ):
     # input
-    act_qscheme = (
-        torch.per_tensor_symmetric if is_symmetric else torch.per_tensor_affine
-    )
+    act_qscheme = torch.per_tensor_symmetric if is_symmetric else torch.per_tensor_affine
     output_qscheme = (
         torch.per_tensor_symmetric
         if quant_config.output_is_symmetric is True
@@ -102,14 +86,12 @@ def get_quantization_config(
         if quant_config.output_is_symmetric is False
         else act_qscheme
     )
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: dict[str, Any] = {"eps": 2**-12}
 
     if is_qat:
         if is_dynamic:
             act_observer_or_fake_quant_ctr = FakeQuantize
-            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
-                averaging_constant=1
-            )
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(averaging_constant=1)
             extra_args["observer"] = dynamic_quant_observer
         else:
             extra_args["observer"] = MovingAverageMinMaxObserver
@@ -154,16 +136,14 @@ def get_quantization_config(
 
     # weight
     weight_qscheme = torch.per_channel_symmetric
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: dict[str, Any] = {"eps": 2**-12}
     if is_qat:
         if weight_qscheme == torch.per_tensor_symmetric:
             extra_args["observer"] = MovingAverageMinMaxObserver
         else:
             extra_args["observer"] = MovingAveragePerChannelMinMaxObserver  # type: ignore[dict-item]
-    
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
-        MinMaxObserver
-    )
+
+    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = MinMaxObserver
     if is_qat:
         # TODO: qat + per channel?
         extra_args["observer"] = PerChannelMinMaxObserver
@@ -181,25 +161,21 @@ def get_quantization_config(
             qscheme=weight_qscheme,
             ch_axis=0,
             is_dynamic=False,
-            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
-                **extra_args
-            ),
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(**extra_args),
         )
     else:
         weight_quantization_spec = None
 
     # convtranspose weight
     weight_qscheme = torch.per_channel_symmetric
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    extra_args: dict[str, Any] = {"eps": 2**-12}
     if is_qat:
         if weight_qscheme == torch.per_tensor_symmetric:
             extra_args["observer"] = MovingAverageMinMaxObserver
         else:
             extra_args["observer"] = MovingAveragePerChannelMinMaxObserver.with_args(ch_axis=1)  # type: ignore[dict-item]
-    
-    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = (
-        MinMaxObserver
-    )
+
+    weight_observer_or_fake_quant_ctr: _ObserverOrFakeQuantizeConstructor = MinMaxObserver
     if is_qat:
         # TODO: qat + per channel?
         weight_observer_or_fake_quant_ctr = FakeQuantize
@@ -215,9 +191,7 @@ def get_quantization_config(
             qscheme=weight_qscheme,
             ch_axis=0,
             is_dynamic=False,
-            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
-                **extra_args
-            ),
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(**extra_args),
         )
     else:
         weight_trans_quantization_spec = None
@@ -251,23 +225,20 @@ def get_quantization_config(
     return quantization_config
 
 
-
-def get_config(config: Dict[str, Any]):
+def get_config(config: dict[str, Any]):
     is_symmetric = config["is_symmetric"]
     if config["input"]["dtype"] == "FP32":
         quant_config = QuantConf(share_qparam=config.get("share_qparam", False))
     else:
         input_dtype = DtypeConf(
-            dtype=tmp_dtype_map[config["input"]["dtype"]],
-            qmin=config["input"]["qmin"],
-            qmax=config["input"]["qmax"]
+            dtype=tmp_dtype_map[config["input"]["dtype"]], qmin=config["input"]["qmin"], qmax=config["input"]["qmax"]
         )
 
         if "weight" in config:
             weight_dtype = DtypeConf(
                 dtype=tmp_dtype_map[config["weight"]["dtype"]],
                 qmin=config["weight"]["qmin"],
-                qmax=config["weight"]["qmax"]
+                qmax=config["weight"]["qmax"],
             )
         else:
             weight_dtype = None
@@ -290,30 +261,30 @@ def get_config(config: Dict[str, Any]):
     return is_symmetric, quant_config
 
 
-def load_global_config(global_config: Dict[str, str], is_qat: bool = True):
+def load_global_config(global_config: dict[str, str], is_qat: bool = True):
     is_symmetric, quant_config = get_config(global_config)
-    global_quantization_config = get_quantization_config(is_symmetric=is_symmetric, is_qat=is_qat, quant_config=quant_config)
+    global_quantization_config = get_quantization_config(
+        is_symmetric=is_symmetric, is_qat=is_qat, quant_config=quant_config
+    )
     return global_quantization_config
 
 
-def load_regional_config(regional_config: Dict[str, str], is_qat: bool = True):
+def load_regional_config(regional_config: dict[str, str], is_qat: bool = True):
     module_names = regional_config.get("module_names", None)
     module_type = regional_config["module_type"]
     is_symmetric, quant_config = get_config(regional_config["module_config"])
     module_config = get_quantization_config(is_symmetric=is_symmetric, is_qat=is_qat, quant_config=quant_config)
     regional_quantization_config = QuantizerRegionalConf(
-        module_names=module_names,
-        module_type=module_type,
-        module_config=module_config
+        module_names=module_names, module_type=module_type, module_config=module_config
     )
     return regional_quantization_config
 
 
 def ax_load_config(config_file: str, is_qat: bool = True):
 
-    with open(config_file, 'r') as f:
+    with open(config_file) as f:
         config = json.load(f)
-    
+
     # global
     global_config = config["global_config"]
     global_quantization_config = load_global_config(global_config, is_qat=is_qat)
@@ -333,8 +304,7 @@ def remove_reused_bn_param_hack(model: torch.fx.GraphModule):
         if (
             node.target == torch.ops.aten.add_.Tensor
             and node.args[1] == 1
-            and torch.nn.modules.batchnorm.BatchNorm2d
-            in [val[1] for val in node.meta["source_fn_stack"]]
+            and torch.nn.modules.batchnorm.BatchNorm2d in [val[1] for val in node.meta["source_fn_stack"]]
         ):
             last_node = node.args[0]
             if last_node.op != "get_attr":
@@ -343,8 +313,7 @@ def remove_reused_bn_param_hack(model: torch.fx.GraphModule):
                     and last_node.op == "call_function"
                     and last_node.args[0].op == "get_attr"
                     and last_node.args[1] == 1
-                    and torch.nn.modules.batchnorm.BatchNorm2d
-                    in [val[1] for val in last_node.meta["source_fn_stack"]]
+                    and torch.nn.modules.batchnorm.BatchNorm2d in [val[1] for val in last_node.meta["source_fn_stack"]]
                 )
                 node.args = (last_node.args[0], node.args[1])
 
@@ -404,9 +373,9 @@ class AXQuantizer(Quantizer):
         self._annotate_bias = annotate_bias
 
         # init global
-        self.global_config: Optional[QuantizationConfig] = None
+        self.global_config: QuantizationConfig | None = None
         # init regional
-        self.regional_configs: List[QuantizerRegionalConf] = []
+        self.regional_configs: list[QuantizerRegionalConf] = []
         self.init_regional()
 
     def init_regional(self):
@@ -415,12 +384,8 @@ class AXQuantizer(Quantizer):
             "module_type": "matmul",
             "module_config": {
                 "is_symmetric": True,
-                "input": {
-                    "dtype": "S16",
-                    "qmin": -32767,
-                    "qmax": 32767
-                },
-            }
+                "input": {"dtype": "S16", "qmin": -32767, "qmax": 32767},
+            },
         }
         regional_matmul_config = load_regional_config(regional_matmul)
         self.regional_configs.append(regional_matmul_config)
@@ -429,30 +394,23 @@ class AXQuantizer(Quantizer):
             "module_type": "gridsample",
             "module_config": {
                 "is_symmetric": True,
-                "input": {
-                    "dtype": "S16",
-                    "qmin": -32767,
-                    "qmax": 32767
-                },
-            }
+                "input": {"dtype": "S16", "qmin": -32767, "qmax": 32767},
+            },
         }
         regional_gridsample_config = load_regional_config(regional_gridsample)
         self.regional_configs.append(regional_gridsample_config)
         return self
-        
-    
+
     def set_global(self, global_config: QuantizationConfig) -> AXQuantizer:
         self.global_config = global_config
         return self
 
-    def set_regional(self, regional_configs: List[QuantizerRegionalConf]):
+    def set_regional(self, regional_configs: list[QuantizerRegionalConf]):
         self.regional_configs.extend(regional_configs)
         return self
 
-    def transform_for_annotation(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-        """Transforms scalar values to tensor attributes"""
+    def transform_for_annotation(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        """Transforms scalar values to tensor attributes."""
         return _convert_scalars_to_attrs(model)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:

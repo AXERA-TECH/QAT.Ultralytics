@@ -8,7 +8,6 @@ from torch.export import Dim
 
 from ultralytics.utils.ax_quantizer import AXQuantizer, ax_load_config
 
-
 LEGACY_QAT_CONFIG_NAMES = {
     "config_exp57_attn_s8.json": "config_siluInU16_attnS8_clsU16.json",
     "config_exp58_silu_u8_attn_s8.json": "config_siluInU8_attnS8_clsU16.json",
@@ -32,7 +31,9 @@ def resolve_qat_config_path(config_path: str | Path) -> Path:
 def _load_quantizer(use_lsq: bool = False):
     """Load the appropriate quantizer module."""
     if use_lsq:
-        from ultralytics.utils.ax_quantizer_lsq import AXQuantizer as LSQQuantizer, ax_load_config as lsq_load_config
+        from ultralytics.utils.ax_quantizer_lsq import AXQuantizer as LSQQuantizer
+        from ultralytics.utils.ax_quantizer_lsq import ax_load_config as lsq_load_config
+
         return LSQQuantizer, lsq_load_config
     return AXQuantizer, ax_load_config
 
@@ -57,11 +58,10 @@ def prepare_pt2e_qat_model(
     input_name: str = "x",
     use_lsq: bool = False,
 ) -> tuple[torch.fx.GraphModule, torch.fx.GraphModule]:
-    """
-    Export a training graph and prepare a PT2E QAT model.
+    """Export a training graph and prepare a PT2E QAT model.
 
-    All dimensions (batch, H, W) use ``Dim.AUTO`` so the exported model accepts
-    variable spatial sizes (needed for ``rect=True`` validation and deployment).
+    All dimensions (batch, H, W) use ``Dim.AUTO`` so the exported model accepts variable spatial sizes (needed for
+    ``rect=True`` validation and deployment).
     """
     height, width = _normalize_imgsz(imgsz)
     max_batch = max(int(dynamic_batch_max), 2)
@@ -71,7 +71,7 @@ def prepare_pt2e_qat_model(
         raise FileNotFoundError(f"QAT config file not found: {config_path}")
 
     QuantizerClass, load_config = _load_quantizer(use_lsq)
-    
+
     inputs = torch.rand(example_batch, 3, height, width, device=device).contiguous()
     global_config, regional_configs = load_config(str(config_path))
     quantizer = QuantizerClass()

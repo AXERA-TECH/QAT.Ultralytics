@@ -209,14 +209,14 @@ def test_predict_sam():
 
     # Test predictor
     predictor = SAMPredictor(
-        overrides=dict(
-            conf=0.25,
-            task="segment",
-            mode="predict",
-            imgsz=1024,
-            model=WEIGHTS_DIR / "mobile_sam.pt",
-            device=DEVICES[0],
-        )
+        overrides={
+            "conf": 0.25,
+            "task": "segment",
+            "mode": "predict",
+            "imgsz": 1024,
+            "model": WEIGHTS_DIR / "mobile_sam.pt",
+            "device": DEVICES[0],
+        }
     )
     predictor.set_image(ASSETS / "zidane.jpg")
     # predictor(bboxes=[439, 437, 524, 709])

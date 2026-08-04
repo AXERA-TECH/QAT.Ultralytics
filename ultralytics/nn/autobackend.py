@@ -13,8 +13,8 @@ from typing import Any
 import cv2
 import numpy as np
 import torch
-import torch.nn as nn
 from PIL import Image
+from torch import nn
 
 from ultralytics.utils import (
     ARM64,
@@ -385,9 +385,9 @@ class AutoBackend(nn.Module):
             # Model context
             try:
                 context = model.create_execution_context()
-            except Exception as e:  # model is None
+            except Exception:  # model is None
                 LOGGER.error(f"TensorRT model exported with a different version than {trt.__version__}\n")
-                raise e
+                raise
 
             bindings = OrderedDict()
             output_names = []

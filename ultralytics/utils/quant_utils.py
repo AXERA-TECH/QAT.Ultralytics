@@ -1,25 +1,19 @@
 import re
-import onnx
-import torch
-import onnx_graphsurgeon as gs
 
-from onnxslim import slim
+import onnx
+import onnx_graphsurgeon as gs
+import torch
 from onnxruntime.quantization.quant_utils import pack_bytes_to_4bit
+from onnxslim import slim
 from torch.ao.quantization import _DerivedObserverOrFakeQuantize
 from torch.ao.quantization.observer import HistogramObserver
 
 
 def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
-    """
-    1. 如果完全不做 constant falding,
-    weight, scale, zero_point 会混乱地存储在 constant 算子或者 initializer 以及 cast 算子后面，
-    不好处理
-    2. 如果直接 slim,
-    会把相同的 weight 合并, u4 和 u8 的 zero_point 如果都是 0 复用第一个，导致后面配置 4bit 时候分不开
-    3. 如果把 slim 里的 constant falding 抽出来单独做
-    后面再 slim 时候又会由于 onnx shape_inference 支持不足，导致 quant 即使是 4bit 的 zero_point,
-    算子输出 value_info 还是会再被改回 8bit
-    4. 最后搞成了下面先 constant falding 刷一遍 param, 再 slim 刷一遍 vi 的形式
+    """1. 如果完全不做 constant falding, weight, scale, zero_point 会混乱地存储在 constant 算子或者 initializer 以及 cast 算子后面， 不好处理 2.
+    如果直接 slim, 会把相同的 weight 合并, u4 和 u8 的 zero_point 如果都是 0 复用第一个，导致后面配置 4bit 时候分不开 3. 如果把 slim 里的 constant falding
+    抽出来单独做 后面再 slim 时候又会由于 onnx shape_inference 支持不足，导致 quant 即使是 4bit 的 zero_point, 算子输出 value_info 还是会再被改回 8bit 4.
+    最后搞成了下面先 constant falding 刷一遍 param, 再 slim 刷一遍 vi 的形式.
     """
     # load
     onnx_model = onnx.load(qat_path)
@@ -55,7 +49,7 @@ def simplify_and_fix_4bit_dtype(qat_path: str, sim_path: str):
                 tensors_4bit.update({node.input[2]: onnx.TensorProto.UINT4})
         elif target == "quantized_decomposed.dequantize_per_channel.default":
             assert len(node_args) == 7
-            input, scale, zp, axis, quant_min, quant_max, dtype = node_args
+            _input, _scale, _zp, _axis, quant_min, quant_max, dtype = node_args
             if int(quant_min) == -7 and int(quant_max) == 7 and dtype == "torch.int8":
                 tensors_4bit.update({node.input[0]: onnx.TensorProto.INT4})
                 tensors_4bit.update({node.input[2]: onnx.TensorProto.INT4})

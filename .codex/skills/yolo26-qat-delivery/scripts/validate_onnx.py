@@ -7,7 +7,6 @@ import numpy as np
 import onnx
 from onnx import TensorProto, numpy_helper
 
-
 DTYPE_NAMES = {
     TensorProto.INT8: "S8",
     TensorProto.UINT8: "U8",
@@ -107,8 +106,7 @@ def main() -> None:
 
     if aligned_split_reshape != args.expect_aligned_split_reshape:
         errors.append(
-            f"aligned Split/Reshape branches={aligned_split_reshape}, "
-            f"expected {args.expect_aligned_split_reshape}"
+            f"aligned Split/Reshape branches={aligned_split_reshape}, expected {args.expect_aligned_split_reshape}"
         )
 
     print(f"model: {args.model}")

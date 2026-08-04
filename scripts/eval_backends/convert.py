@@ -1,40 +1,59 @@
 #!/usr/bin/env python3
 """Evaluate a QAT checkpoint after convert_pt2e using real Q/DQ operators."""
+
 import argparse
 import copy
 import json
+import warnings
 from types import SimpleNamespace
 
 import torch
 from torch.ao.quantization.quantize_pt2e import convert_pt2e
 
+import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
 from ultralytics import YOLO
 from ultralytics.data.build import build_dataloader, build_yolo_dataset
 from ultralytics.data.utils import check_det_dataset
-from ultralytics.engine.validator import BaseValidator
 from ultralytics.models.yolo.detect.val import DetectionValidator
 from ultralytics.models.yolo.obb.val import OBBValidator
 from ultralytics.models.yolo.pose.val import PoseValidator
 from ultralytics.utils import DEFAULT_CFG_DICT
 from ultralytics.utils.qat_utils import prepare_pt2e_qat_model
 from ultralytics.utils.torch_utils import select_device
-import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
-import warnings
+
 warnings.filterwarnings("ignore")
 
 
 class FakeTrainer:
     def __init__(self, float_model, qat_model, data_dict, device, end2end, task):
-        self.model = float_model; self.qat_model = qat_model; self.device = device
-        self.data = data_dict; self.ema = None; self.amp = False
+        self.model = float_model
+        self.qat_model = qat_model
+        self.device = device
+        self.data = data_dict
+        self.ema = None
+        self.amp = False
         self.loss_names = get_loss_names(float_model, task)
         self.loss_items = torch.zeros(len(self.loss_names))
-        self.world_size = 1; self.epoch = 0; self.epochs = 1
+        self.world_size = 1
+        self.epoch = 0
+        self.epochs = 1
         from collections import namedtuple
+
         self.stopper = namedtuple("S", ["possible_stop"])(possible_stop=False)
-        self.args = argparse.Namespace(half=False, amp=False, compile=False, plots=False, end2end=end2end,
-                                       conf=0.001, iou=0.7, max_det=300, single_cls=False,
-                                       agnostic_nms=False, save_json=False, save_hybrid=False)
+        self.args = argparse.Namespace(
+            half=False,
+            amp=False,
+            compile=False,
+            plots=False,
+            end2end=end2end,
+            conf=0.001,
+            iou=0.7,
+            max_det=300,
+            single_cls=False,
+            agnostic_nms=False,
+            save_json=False,
+            save_hybrid=False,
+        )
 
     def label_loss_items(self, loss_items=None, prefix="val"):
         if loss_items is not None:
@@ -99,8 +118,9 @@ def run_classify_convert(a, device):
     fm.nc = data_dict["nc"]
     fm.names = data_dict["names"]
     fm.train()
-    _, prepared = prepare_pt2e_qat_model(float_model=fm, device=device, config_path=a.quant_config,
-                                         imgsz=a.imgsz, dynamic_batch_max=128)
+    _, prepared = prepare_pt2e_qat_model(
+        float_model=fm, device=device, config_path=a.quant_config, imgsz=a.imgsz, dynamic_batch_max=128
+    )
     fm.criterion = fm.init_criterion()
 
     ckpt = torch.load(a.ckpt, weights_only=False, map_location="cpu")
@@ -116,9 +136,21 @@ def run_classify_convert(a, device):
     print(f"[convert] 真实量化模型，残留 BN={bn}", flush=True)
 
     cfg = copy.deepcopy(DEFAULT_CFG_DICT)
-    cfg.update({"task": "classify", "mode": "val", "data": a.data, "imgsz": a.imgsz, "batch": a.batch,
-                "device": a.device, "workers": a.workers, "split": "val", "half": False, "plots": False,
-                "save_json": False})
+    cfg.update(
+        {
+            "task": "classify",
+            "mode": "val",
+            "data": a.data,
+            "imgsz": a.imgsz,
+            "batch": a.batch,
+            "device": a.device,
+            "workers": a.workers,
+            "split": "val",
+            "half": False,
+            "plots": False,
+            "save_json": False,
+        }
+    )
     validator = ClassificationValidator(args=cfg)
     validator.dataloader = validator.get_dataloader(data_dict["val"], a.batch)
     ft = FakeTrainer(fm, converted, data_dict, device, False, "classify")
@@ -137,16 +169,22 @@ data_dict = check_det_dataset(a.data)
 m = YOLO(a.model, task=a.task)
 rebuild_task_model(m, a.task, a.model, data_dict)
 m.load(a.pretrained)
-fm = m.model.float().to(device); fm.train()
+fm = m.model.float().to(device)
+fm.train()
 fm.nc = data_dict["nc"]
 fm.names = data_dict["names"]
 fm.model[-1].end2end = requested_e2e
 e2e = bool(fm.model[-1].end2end)
 if e2e != requested_e2e:
-    print(f"[convert] requested end2end={requested_e2e}, but {type(fm.model[-1]).__name__} has no one2one head; use end2end={e2e}", flush=True)
+    print(
+        f"[convert] requested end2end={requested_e2e}, but {type(fm.model[-1]).__name__} has no one2one head; use end2end={e2e}",
+        flush=True,
+    )
 model_args = getattr(fm, "args", {})
 hyp = dict(DEFAULT_CFG_DICT, **model_args) if isinstance(model_args, dict) else {}
-hyp.setdefault("box", 7.5); hyp.setdefault("cls", 0.5); hyp.setdefault("dfl", 1.5)
+hyp.setdefault("box", 7.5)
+hyp.setdefault("cls", 0.5)
+hyp.setdefault("dfl", 1.5)
 _, prepared = prepare_pt2e_qat_model(
     float_model=fm,
     device=device,
@@ -171,23 +209,68 @@ bn = sum(1 for n in converted.graph.nodes if "batch_norm" in str(n.target).lower
 print(f"[convert] 真实量化模型，残留 BN={bn}", flush=True)
 
 gs = max(int(fm.stride.max()), 32)
-ns = argparse.Namespace(task=a.task, data=a.data, imgsz=a.imgsz, batch=a.batch, workers=a.workers, fraction=1.0,
-                        augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0, hsv_s=0.0, hsv_v=0.0,
-                        degrees=0.0, translate=0.0, scale=0.0, shear=0.0, perspective=0.0, mosaic=0.0,
-                        mixup=0.0, cutmix=0.0, copy_paste=0.0, auto_augment=None, single_cls=False,
-                        classes=None, overlap_mask=False, mask_ratio=4, rect=rect, cache=False)
+ns = argparse.Namespace(
+    task=a.task,
+    data=a.data,
+    imgsz=a.imgsz,
+    batch=a.batch,
+    workers=a.workers,
+    fraction=1.0,
+    augment=False,
+    erasing=0.0,
+    flipud=0.0,
+    fliplr=0.0,
+    hsv_h=0.0,
+    hsv_s=0.0,
+    hsv_v=0.0,
+    degrees=0.0,
+    translate=0.0,
+    scale=0.0,
+    shear=0.0,
+    perspective=0.0,
+    mosaic=0.0,
+    mixup=0.0,
+    cutmix=0.0,
+    copy_paste=0.0,
+    auto_augment=None,
+    single_cls=False,
+    classes=None,
+    overlap_mask=False,
+    mask_ratio=4,
+    rect=rect,
+    cache=False,
+)
 vds = build_yolo_dataset(ns, data_dict["val"], a.batch, data_dict, mode="val", rect=rect, stride=gs)
 vl = build_dataloader(vds, batch=a.batch, workers=a.workers, shuffle=False, rank=-1, drop_last=False)
 cfg = copy.deepcopy(DEFAULT_CFG_DICT)
-cfg.update({"task": a.task, "mode": "val", "data": a.data, "imgsz": a.imgsz, "batch": a.batch,
-            "device": a.device, "workers": a.workers, "split": "val", "end2end": e2e, "conf": 0.001,
-            "iou": 0.7, "max_det": 300, "half": False, "plots": False,
-            "save_json": pycoco, "save_hybrid": False})
+cfg.update(
+    {
+        "task": a.task,
+        "mode": "val",
+        "data": a.data,
+        "imgsz": a.imgsz,
+        "batch": a.batch,
+        "device": a.device,
+        "workers": a.workers,
+        "split": "val",
+        "end2end": e2e,
+        "conf": 0.001,
+        "iou": 0.7,
+        "max_det": 300,
+        "half": False,
+        "plots": False,
+        "save_json": pycoco,
+        "save_hybrid": False,
+    }
+)
 validator_class = PoseValidator if a.task == "pose" else OBBValidator if a.task == "obb" else DetectionValidator
 validator = validator_class(dataloader=vl, args=cfg)
 ft = FakeTrainer(fm, converted, data_dict, device, e2e, a.task)
 res = validator(trainer=ft)
-print(f"\n>>> convert 真实量化 mAP50-95={res.get('metrics/mAP50-95(B)',0):.4f}  mAP50={res.get('metrics/mAP50(B)',0):.4f}", flush=True)
+print(
+    f"\n>>> convert 真实量化 mAP50-95={res.get('metrics/mAP50-95(B)', 0):.4f}  mAP50={res.get('metrics/mAP50(B)', 0):.4f}",
+    flush=True,
+)
 if a.task == "pose":
     print(
         f">>> convert Pose mAP50-95={res.get('metrics/mAP50-95(P)', 0):.4f}  "

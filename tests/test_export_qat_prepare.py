@@ -25,7 +25,6 @@ class _PreparedModel(torch.nn.Module):
 
     def load_state_dict(self, state_dict, strict=True):
         self.loaded_state = (state_dict, strict)
-        return None
 
 
 def test_export_reuses_training_prepare_path(monkeypatch, tmp_path):

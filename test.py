@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import torch
 
+import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
 from ultralytics import YOLO
 from ultralytics.data.augment import LetterBox
 from ultralytics.data.utils import IMG_FORMATS
@@ -24,8 +25,6 @@ from ultralytics.utils import nms, ops
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.qat_utils import prepare_pt2e_qat_model, resolve_qat_config_path
 from ultralytics.utils.torch_utils import select_device
-import ultralytics.utils.quantized_decomposed_dequantize_per_channel  # noqa: F401
-
 
 DEFAULT_QAT_MODEL = "runs/detect/exp58-globalSiluU8AttnS8-e2eTrue-noEMA/weights/best.pt"
 TASK_DEFAULTS = {
@@ -313,12 +312,8 @@ def make_result(
         if task == "segment":
             if inference.proto is None:
                 raise RuntimeError("Segmentation inference did not return mask prototypes")
-            masks = ops.process_mask(
-                inference.proto[0], detections[:, 6:], detections[:, :4], input_hw, upsample=True
-            )
-        detections[:, :4] = ops.scale_boxes(
-            input_hw, detections[:, :4], original.shape[:2], xywh=task == "obb"
-        )
+            masks = ops.process_mask(inference.proto[0], detections[:, 6:], detections[:, :4], input_hw, upsample=True)
+        detections[:, :4] = ops.scale_boxes(input_hw, detections[:, :4], original.shape[:2], xywh=task == "obb")
     if task == "obb":
         obb = torch.cat([detections[:, :4], detections[:, 6:7], detections[:, 4:6]], dim=1)
         return Results(original, str(image_path), names, obb=obb.cpu())

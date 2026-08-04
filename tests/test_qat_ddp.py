@@ -60,7 +60,7 @@ def test_qat_checkpoint_unwraps_parallel_model(tmp_path):
     trainer.last = trainer.wdir / "last.pt"
     trainer.best = trainer.wdir / "best.pt"
     trainer.save_period = -1
-    trainer.read_results_csv = lambda: {}
+    trainer.read_results_csv = dict
 
     trainer.save_model()
     checkpoint = torch.load(trainer.last, map_location="cpu", weights_only=False)
@@ -75,9 +75,7 @@ def test_qat_ddp_builds_full_validation_loader_only_on_rank0(monkeypatch):
     trainer.world_size = 2
     trainer.epochs = 1
     trainer.data = {"train": "train", "val": "val"}
-    trainer.args = SimpleNamespace(
-        task="detect", nbs=64, weight_decay=0.0005, optimizer="SGD", lr0=0.1, momentum=0.9
-    )
+    trainer.args = SimpleNamespace(task="detect", nbs=64, weight_decay=0.0005, optimizer="SGD", lr0=0.1, momentum=0.9)
     trainer.qat_model = torch.nn.Linear(2, 2)
     calls = []
     train_loader = SimpleNamespace(dataset=range(64))
@@ -109,13 +107,18 @@ def test_qat_ddp_validation_runs_on_rank0_and_broadcasts(monkeypatch):
     trainer.loss = torch.tensor(1.0)
     trainer.best_fitness = 0.0
     seen_world_sizes = []
-    trainer.validator = lambda current: seen_world_sizes.append(current.world_size) or {
-        "metrics/mAP50-95(B)": 0.4,
-        "fitness": 0.4,
-    }
+    trainer.validator = lambda current: (
+        seen_world_sizes.append(current.world_size)
+        or {
+            "metrics/mAP50-95(B)": 0.4,
+            "fitness": 0.4,
+        }
+    )
     broadcasts = []
     monkeypatch.setattr(trainer_module, "RANK", 0)
-    monkeypatch.setattr(trainer_module.dist, "broadcast_object_list", lambda values, src: broadcasts.append((values, src)))
+    monkeypatch.setattr(
+        trainer_module.dist, "broadcast_object_list", lambda values, src: broadcasts.append((values, src))
+    )
 
     metrics, fitness = trainer.validate()
 

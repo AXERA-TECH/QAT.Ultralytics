@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from . import LOGGER
 from .metrics import bbox_iou, probiou
@@ -34,7 +34,7 @@ class TaskAlignedAssigner(nn.Module):
         num_classes: int = 80,
         alpha: float = 1.0,
         beta: float = 6.0,
-        stride: list = [8, 16, 32],
+        stride: list | None = None,
         eps: float = 1e-9,
         topk2=None,
     ):
@@ -49,6 +49,8 @@ class TaskAlignedAssigner(nn.Module):
             eps (float, optional): A small value to prevent division by zero.
             topk2 (int, optional): Secondary topk value for additional filtering.
         """
+        if stride is None:
+            stride = [8, 16, 32]
         super().__init__()
         self.topk = topk
         self.topk2 = topk2 or topk

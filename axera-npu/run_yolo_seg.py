@@ -17,7 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from run_yolo_detect import (  # noqa: E402
+from run_yolo_detect import (
     COCO80_NAMES,
     LetterBox,
     _color_for_class,
@@ -28,7 +28,6 @@ from run_yolo_detect import (  # noqa: E402
     sigmoid,
     xyxy2ltwh,
 )
-
 
 BOX_OUTPUTS = ("boxes_p3", "boxes_p4", "boxes_p5")
 SCORE_OUTPUTS = ("scores_p3", "scores_p4", "scores_p5")
@@ -86,7 +85,9 @@ def decode_segment_outputs(
         if stride * feature_size != imgsz[0]:
             raise ValueError(f"Input size {imgsz[0]} is incompatible with feature size {feature_size}")
 
-        gy, gx = np.meshgrid(np.arange(feature_size, dtype=np.float32), np.arange(feature_size, dtype=np.float32), indexing="ij")
+        gy, gx = np.meshgrid(
+            np.arange(feature_size, dtype=np.float32), np.arange(feature_size, dtype=np.float32), indexing="ij"
+        )
         anchors = np.stack((gx + 0.5, gy + 0.5), axis=-1).reshape(-1, 2)
         distances = boxes[0].T
         xyxy = np.concatenate((anchors - distances[:, :2], anchors + distances[:, 2:]), axis=1) * stride
@@ -117,7 +118,9 @@ def decode_segment_outputs(
     )
 
 
-def process_masks(prototypes: np.ndarray, coefficients: np.ndarray, boxes: np.ndarray, input_hw: tuple[int, int]) -> np.ndarray:
+def process_masks(
+    prototypes: np.ndarray, coefficients: np.ndarray, boxes: np.ndarray, input_hw: tuple[int, int]
+) -> np.ndarray:
     """Apply mask coefficients, crop in prototype space, and upsample to the model input with NumPy/OpenCV."""
     channels, mask_h, mask_w = prototypes.shape
     if coefficients.shape[1] != channels:
@@ -148,13 +151,13 @@ def scale_masks(masks: np.ndarray, original_shape: tuple[int, int]) -> np.ndarra
     top, left = round(pad_h - 0.1), round(pad_w - 0.1)
     bottom, right = input_h - round(pad_h + 0.1), input_w - round(pad_w + 0.1)
     cropped = masks[:, top:bottom, left:right].astype(np.float32)
-    resized = np.stack(
-        [cv2.resize(mask, (original_w, original_h), interpolation=cv2.INTER_LINEAR) for mask in cropped]
-    )
+    resized = np.stack([cv2.resize(mask, (original_w, original_h), interpolation=cv2.INTER_LINEAR) for mask in cropped])
     return (resized > 0.5).astype(np.uint8)
 
 
-def draw_segmentations(image: np.ndarray, masks: np.ndarray, scores: np.ndarray, classes: np.ndarray, conf: float) -> np.ndarray:
+def draw_segmentations(
+    image: np.ndarray, masks: np.ndarray, scores: np.ndarray, classes: np.ndarray, conf: float
+) -> np.ndarray:
     """Overlay masks first, then reuse the detection renderer for boxes and labels."""
     visualized = image.copy()
     for mask, score, class_id in zip(masks, scores, classes):
@@ -222,9 +225,7 @@ class YOLOSegPredictor:
 
         if self.save_vis is not None and self.vis_count < self.vis_limit:
             visualized = draw_segmentations(meta["original"], masks, scores, classes, self.vis_conf)
-            visualized = draw_detections(
-                visualized, prediction[:, :4], scores, classes, COCO80_NAMES, self.vis_conf
-            )
+            visualized = draw_detections(visualized, prediction[:, :4], scores, classes, COCO80_NAMES, self.vis_conf)
             cv2.imwrite(str(self.save_vis / f"{meta['image_name']}.jpg"), visualized)
             self.vis_count += 1
 

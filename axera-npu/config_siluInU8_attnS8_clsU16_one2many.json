@@ -10,16 +10,8 @@
         "tensor_name": "DEFAULT",
         "calibration_dataset": "/path/to/dataset",
         "calibration_size": 32,
-        "calibration_mean": [
-          0,
-          0,
-          0
-        ],
-        "calibration_std": [
-          1.0,
-          1.0,
-          1.0
-        ],
+        "calibration_mean": [0, 0, 0],
+        "calibration_std": [1.0, 1.0, 1.0],
         "calibration_format": "Binary"
       }
     ],
@@ -51,19 +43,11 @@
         "output_data_type": "S8"
       },
       {
-        "layer_names": [
-          "node_Conv_720",
-          "node_Conv_1554"
-        ],
+        "layer_names": ["node_Conv_720", "node_Conv_1554"],
         "output_data_type": "S8"
       },
       {
-        "layer_names": [
-          "node_MatMul_785",
-          "node_Conv_816",
-          "node_MatMul_1616",
-          "node_Conv_1647"
-        ],
+        "layer_names": ["node_MatMul_785", "node_Conv_816", "node_MatMul_1616", "node_Conv_1647"],
         "data_type": "S8"
       }
     ],
@@ -78,16 +62,8 @@
       "tensor_layout": "NCHW",
       "src_layout": "NCHW",
       "src_dtype": "FP32",
-      "mean": [
-        0,
-        0,
-        0
-      ],
-      "std": [
-        1,
-        1,
-        1
-      ]
+      "mean": [0, 0, 0],
+      "std": [1, 1, 1]
     }
   ],
   "output_processors": [],

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import glob
-import math
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -273,9 +272,12 @@ class QuantONNXBackend:
             raise RuntimeError("Segment QuantONNX must provide mask_coefficient and proto_masks outputs")
 
         anchors = sorted(boxes, reverse=True)
+        # Anchor counts are ordered largest-first (stride 8, 16, 32); derive feature-map shapes from
+        # the actual input H/W so non-square inputs (e.g. 352x640) decode correctly.
+        strides = [int(value) for value in self.reference_model.model[-1].stride.tolist()]
         feats = [
-            torch.zeros(1, 1, math.isqrt(anchor_count), math.isqrt(anchor_count), device=self.device)
-            for anchor_count in anchors
+            torch.zeros(1, 1, self.input_hw[0] // stride, self.input_hw[1] // stride, device=self.device)
+            for stride in strides
         ]
         pred_dict = {
             "boxes": [boxes[anchor_count] for anchor_count in anchors],

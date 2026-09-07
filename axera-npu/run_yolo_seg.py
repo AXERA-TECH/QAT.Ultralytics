@@ -19,11 +19,13 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from run_yolo_detect import (  # noqa: E402
     COCO80_NAMES,
+    DETECTION_STRIDES,
     LetterBox,
     _color_for_class,
     coco80_to_coco91_class,
     create_inference_session,
     draw_detections,
+    make_anchor_grid,
     scale_boxes,
     sigmoid,
     xyxy2ltwh,
@@ -63,14 +65,12 @@ def decode_segment_outputs(
     """Decode raw segmentation boxes, scores and mask coefficients into top-k detections."""
     if len(boxes_by_scale) != 3 or len(scores_by_scale) != 3:
         raise ValueError("Expected P3/P4/P5 box and score outputs.")
-    if imgsz[0] != imgsz[1]:
-        raise ValueError(f"Only square segmentation inputs are supported, got {imgsz}.")
     if mask_coefficients.ndim != 3 or mask_coefficients.shape[0] != 1:
         raise ValueError(f"Unexpected mask_coefficient shape: {mask_coefficients.shape}")
 
     decoded_boxes, decoded_scores = [], []
     expected_anchors = 0
-    for boxes, scores in zip(boxes_by_scale, scores_by_scale):
+    for (boxes, scores), stride in zip(zip(boxes_by_scale, scores_by_scale), DETECTION_STRIDES):
         if boxes.ndim != 3 or boxes.shape[:2] != (1, 4):
             raise ValueError(f"Unexpected box output shape: {boxes.shape}")
         if scores.ndim != 3 or scores.shape[0] != 1:
@@ -79,15 +79,7 @@ def decode_segment_outputs(
             raise ValueError(f"Box/score anchor count differs: {boxes.shape} vs {scores.shape}")
 
         anchor_count = boxes.shape[2]
-        feature_size = int(np.sqrt(anchor_count))
-        if feature_size * feature_size != anchor_count:
-            raise ValueError(f"Output anchor count must be square, got {anchor_count}")
-        stride = imgsz[0] // feature_size
-        if stride * feature_size != imgsz[0]:
-            raise ValueError(f"Input size {imgsz[0]} is incompatible with feature size {feature_size}")
-
-        gy, gx = np.meshgrid(np.arange(feature_size, dtype=np.float32), np.arange(feature_size, dtype=np.float32), indexing="ij")
-        anchors = np.stack((gx + 0.5, gy + 0.5), axis=-1).reshape(-1, 2)
+        anchors = make_anchor_grid(imgsz, stride, anchor_count)
         distances = boxes[0].T
         xyxy = np.concatenate((anchors - distances[:, :2], anchors + distances[:, 2:]), axis=1) * stride
         decoded_boxes.append(xyxy)

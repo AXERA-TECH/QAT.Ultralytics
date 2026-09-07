@@ -164,40 +164,60 @@ def batched_nms(boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray, io
     return keep[order][:max_det]
 
 
-def pair_outputs(outputs: list[np.ndarray], num_classes: int) -> list[tuple[int, np.ndarray, np.ndarray]]:
+def pair_outputs(
+    outputs: list[np.ndarray], num_classes: int, input_hw: tuple[int, int] = (640, 640)
+) -> list[tuple[int, np.ndarray, np.ndarray]]:
     groups: dict[tuple[int, int], dict[str, np.ndarray]] = {}
+    input_h, input_w = (int(value) for value in input_hw)
+    scale_shapes = {
+        (input_h // stride, input_w // stride): stride for stride in (8, 16, 32)
+        if input_h % stride == 0 and input_w % stride == 0
+    }
     for output in outputs:
-        squeezed = output[0] if output.ndim == 4 and output.shape[0] == 1 else output
-        if squeezed.ndim != 3:
-            raise ValueError(f"Unsupported output shape: {output.shape}")
-
-        shape = squeezed.shape
-        if shape[-1] in (4, num_classes):
-            spatial = (shape[0], shape[1])
-            channels = shape[-1]
-        elif shape[0] in (4, num_classes):
-            spatial = (shape[1], shape[2])
-            channels = shape[0]
+        has_flat_batch = output.ndim == 3 and output.shape[0] == 1 and output.shape[1] in (4, num_classes)
+        squeezed = output[0] if (output.ndim == 4 and output.shape[0] == 1) or has_flat_batch else output
+        if squeezed.ndim == 2 and squeezed.shape[0] in (4, num_classes):
+            channels = squeezed.shape[0]
+            candidates = [spatial for spatial in scale_shapes if spatial[0] * spatial[1] == squeezed.shape[1]]
+            if len(candidates) != 1:
+                raise ValueError(f"Cannot map flattened output shape {output.shape} to input {input_hw}")
+            spatial = candidates[0]
+            arranged = squeezed.T.reshape(*spatial, channels)
+        elif squeezed.ndim == 3:
+            shape = squeezed.shape
+            if shape[-1] in (4, num_classes):
+                spatial = (shape[0], shape[1])
+                channels = shape[-1]
+            elif shape[0] in (4, num_classes):
+                spatial = (shape[1], shape[2])
+                channels = shape[0]
+            else:
+                raise ValueError(f"Cannot classify output tensor shape: {output.shape}")
+            arranged = ensure_hwc(output, channels)
         else:
-            raise ValueError(f"Cannot classify output tensor shape: {output.shape}")
+            raise ValueError(f"Unsupported output shape: {output.shape}")
 
         group = groups.setdefault(spatial, {})
         if channels == 4:
-            group["box"] = ensure_hwc(output, 4)
+            group["box"] = arranged
         else:
-            group["cls"] = ensure_hwc(output, num_classes)
+            group["cls"] = arranged
 
     pairs = []
-    for (feat_h, _), group in sorted(groups.items(), reverse=True):
+    for (feat_h, feat_w), group in sorted(groups.items(), reverse=True):
         if "box" not in group or "cls" not in group:
             raise ValueError("Incomplete output pair.")
-        stride = 640 // feat_h
+        if input_h % feat_h or input_w % feat_w or input_h // feat_h != input_w // feat_w:
+            raise ValueError(f"Feature map {(feat_h, feat_w)} is incompatible with input {input_hw}")
+        stride = input_h // feat_h
         pairs.append((stride, group["box"], group["cls"]))
     return pairs
 
 
-def decode_predictions(outputs: list[np.ndarray], num_classes: int = 80) -> torch.Tensor:
-    if len(outputs) == 1 and outputs[0].shape == (1, 84, 8400):
+def decode_predictions(
+    outputs: list[np.ndarray], num_classes: int = 80, input_hw: tuple[int, int] = (640, 640)
+) -> torch.Tensor:
+    if len(outputs) == 1 and tuple(input_hw) == (640, 640) and outputs[0].shape == (1, 84, 8400):
         pred = torch.from_numpy(outputs[0].astype(np.float32))[0]
         pred = pred.T
         boxes_xywh = pred[:, :4].clone()
@@ -217,7 +237,7 @@ def decode_predictions(outputs: list[np.ndarray], num_classes: int = 80) -> torc
             elif s[1] == num_classes:
                 entry["cls"] = t
 
-    if len(perscale_configs) == 3:
+    if tuple(input_hw) == (640, 640) and len(perscale_configs) == 3:
         strides_map = {6400: 8, 1600: 16, 400: 32}
         feat_map = {6400: 80, 1600: 40, 400: 20}
         preds = []
@@ -237,7 +257,7 @@ def decode_predictions(outputs: list[np.ndarray], num_classes: int = 80) -> torc
             preds.append(np.concatenate((xyxy, cl), axis=1))
         return torch.from_numpy(np.concatenate(preds, axis=0).astype(np.float32))[None, ...]
 
-    pairs = pair_outputs(outputs, num_classes)
+    pairs = pair_outputs(outputs, num_classes, input_hw=input_hw)
     preds = []
     for stride, feat_box, feat_cls in pairs:
         feat_h, feat_w, _ = feat_box.shape
@@ -284,7 +304,7 @@ class YOLO26ONNXPredictor:
         return img[None, ...], meta
 
     def postprocess(self, outputs: list[np.ndarray], meta: dict) -> None:
-        pred = decode_predictions(outputs, num_classes=80)[0]
+        pred = decode_predictions(outputs, num_classes=80, input_hw=(self.input_h, self.input_w))[0]
         boxes = pred[:, :4]
         scores = pred[:, 4:]
 

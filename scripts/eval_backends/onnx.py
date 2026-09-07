@@ -35,6 +35,7 @@ from ultralytics.data.utils import check_det_dataset
 from ultralytics.models.yolo.detect.val import DetectionValidator
 from ultralytics.utils import DEFAULT_CFG_DICT
 from ultralytics.utils.torch_utils import select_device
+from scripts.eval_backends.onnx_utils import resolve_imgsz
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -60,17 +61,26 @@ class FakeTrainer:
 class OrtOne2One(torch.nn.Module):
     """把六输出 raw ONNX 包装为 validator 所需的 PT2E dict（batch 固定为 1，逐图执行）。"""
 
-    def __init__(self, onnx_path, device, box_channels, score_channels, end2end):
+    def __init__(self, onnx_path, device, box_channels, score_channels, end2end, strides, session=None):
         super().__init__()
-        so = ort.SessionOptions()
-        self.sess = ort.InferenceSession(onnx_path, so, providers=["CPUExecutionProvider"])
+        if session is None:
+            so = ort.SessionOptions()
+            session = ort.InferenceSession(onnx_path, so, providers=["CPUExecutionProvider"])
+        self.sess = session
         self.iname = self.sess.get_inputs()[0].name
         self.dev = device
         self.box_channels = box_channels
         self.score_channels = score_channels
         self.end2end = end2end
+        self.strides = tuple(int(stride) for stride in strides)
+        input_shape = self.sess.get_inputs()[0].shape
+        if len(input_shape) != 4 or not all(isinstance(value, int) for value in input_shape[-2:]):
+            raise RuntimeError(f"QuantONNX must have fixed NCHW spatial dimensions, got {input_shape}")
+        self.input_hw = tuple(input_shape[-2:])
 
     def forward(self, x):
+        if tuple(x.shape[-2:]) != self.input_hw:
+            raise RuntimeError(f"QuantONNX expects spatial input {self.input_hw}, got {tuple(x.shape[-2:])}")
         per_img = [self.sess.run(None, {self.iname: x[i:i + 1].detach().cpu().numpy()})
                    for i in range(x.shape[0])]
         boxes, scores = {}, {}
@@ -89,9 +99,21 @@ class OrtOne2One(torch.nn.Module):
             raise RuntimeError("Expected three matching box/score outputs from the raw one2one ONNX model")
         bl = [boxes[k] for k in sorted(boxes, reverse=True)]     # anchor 6400/1600/400 = p3/p4/p5
         sl = [scores[k] for k in sorted(scores, reverse=True)]
-        # head._get_decode_boxes 只用 feats 的 shape/dtype/device 生成 anchors → dummy 即可（80/40/20 由 anchor 数反推）
         B = x.shape[0]
-        feats = [torch.zeros(B, 1, int(k ** 0.5), int(k ** 0.5), device=self.dev) for k in sorted(boxes, reverse=True)]
+        if len(self.strides) != len(boxes):
+            raise RuntimeError(f"Expected {len(self.strides)} detection scales, got {len(boxes)}")
+        feats = []
+        for anchor_count, stride in zip(sorted(boxes, reverse=True), self.strides):
+            if self.input_hw[0] % stride or self.input_hw[1] % stride:
+                raise RuntimeError(f"ONNX input {self.input_hw} must be divisible by stride {stride}")
+            feature_h, feature_w = self.input_hw[0] // stride, self.input_hw[1] // stride
+            expected = feature_h * feature_w
+            if anchor_count != expected:
+                raise RuntimeError(
+                    f"Anchor count mismatch at stride {stride}: expected {feature_h}x{feature_w}={expected}, "
+                    f"got {anchor_count}"
+                )
+            feats.append(torch.zeros(B, 1, feature_h, feature_w, device=self.dev))
         pred_dict = {"boxes": bl, "scores": sl, "feats": feats}
         if not self.end2end:
             return pred_dict
@@ -101,86 +123,109 @@ class OrtOne2One(torch.nn.Module):
         return {"one2one": pred_dict, "one2many": one2many}
 
 
-p = argparse.ArgumentParser()
-p.add_argument("--onnx", required=True, help="导出的 QAT onnx（6 输出 raw one2one）")
-p.add_argument("--model", default="yolo26n.yaml")
-p.add_argument("--pretrained", default="yolo26n.pt")
-p.add_argument("--data", default="coco.yaml")
-p.add_argument("--end2end", default="True")
-p.add_argument("--rect", default="False")
-p.add_argument("--pycoco", default="True")
-p.add_argument("--batch", type=int, default=16, help="dataloader batch（onnx 内部仍逐图跑）")
-p.add_argument("--workers", type=int, default=4)
-p.add_argument("--imgsz", type=int, default=640)
-p.add_argument("--device", default="cpu", help="decode/metric 所在设备（ort 固定 CPU EP）")
-a = p.parse_args()
-requested_e2e = a.end2end.lower() == "true"
-rect = a.rect.lower() == "true"
-pycoco = a.pycoco.lower() == "true"
-device = select_device(a.device)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--onnx", required=True, help="导出的 QAT onnx（6 输出 raw one2one）")
+    parser.add_argument("--model", default="yolo26n.yaml")
+    parser.add_argument("--pretrained", default="yolo26n.pt")
+    parser.add_argument("--data", default="coco.yaml")
+    parser.add_argument("--end2end", default="True")
+    parser.add_argument("--rect", default="False")
+    parser.add_argument("--pycoco", default="True")
+    parser.add_argument("--batch", type=int, default=16, help="dataloader batch（onnx 内部仍逐图跑）")
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--imgsz", nargs="+", type=int, default=None, help="Optional ONNX input size: height width.")
+    parser.add_argument("--device", default="cpu", help="decode/metric 所在设备（ort 固定 CPU EP）")
+    return parser.parse_args()
 
-# float 参考模型：只为 head 的 _inference/postprocess 结构与 stride/names（不参与数值）
-m = YOLO(a.model, task="detect").load(a.pretrained)
-fm = m.model.float().to(device)
-fm.model[-1].end2end = requested_e2e
-e2e = bool(fm.model[-1].end2end)
-if e2e != requested_e2e:
-    print(f"[onnx] requested end2end={requested_e2e}, but {type(fm.model[-1]).__name__} has no one2one head; use end2end={e2e}", flush=True)
-hyp = dict(DEFAULT_CFG_DICT, **fm.args) if isinstance(fm.args, dict) else {}
-hyp.setdefault("box", 7.5); hyp.setdefault("cls", 0.5); hyp.setdefault("dfl", 1.5)
-fm.args = SimpleNamespace(**hyp)
-fm.criterion = fm.init_criterion()
-fm.eval()
 
-head = fm.model[-1]
-wrapper = OrtOne2One(
-    a.onnx,
-    device,
-    box_channels=4 * int(getattr(head, "reg_max", 1)),
-    score_channels=head.nc,
-    end2end=head.end2end,
-)
-print(f"[ort] {a.onnx} 加载成功（CPU EP，batch 固定 1 逐图）", flush=True)
+def main():
+    a = parse_args()
+    requested_e2e = a.end2end.lower() == "true"
+    rect = a.rect.lower() == "true"
+    if rect:
+        raise ValueError("Fixed-shape QuantONNX validation does not support --rect True")
+    pycoco = a.pycoco.lower() == "true"
+    device = select_device(a.device)
 
-data_dict = check_det_dataset(a.data)
-gs = max(int(fm.stride.max()), 32)
-ns = argparse.Namespace(task="detect", data=a.data, imgsz=a.imgsz, batch=a.batch, workers=a.workers, fraction=1.0,
-                        augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0, hsv_s=0.0, hsv_v=0.0,
-                        degrees=0.0, translate=0.0, scale=0.0, shear=0.0, perspective=0.0, mosaic=0.0,
-                        mixup=0.0, cutmix=0.0, copy_paste=0.0, auto_augment=None, single_cls=False,
-                        classes=None, overlap_mask=False, mask_ratio=4, rect=rect, cache=False)
-vds = build_yolo_dataset(ns, data_dict["val"], a.batch, data_dict, mode="val", rect=rect, stride=gs)
-vl = build_dataloader(vds, batch=a.batch, workers=a.workers, shuffle=False, rank=-1, drop_last=False)
+    # float 参考模型：只为 head 的 _inference/postprocess 结构与 stride/names（不参与数值）
+    m = YOLO(a.model, task="detect").load(a.pretrained)
+    fm = m.model.float().to(device)
+    fm.model[-1].end2end = requested_e2e
+    e2e = bool(fm.model[-1].end2end)
+    if e2e != requested_e2e:
+        print(
+            f"[onnx] requested end2end={requested_e2e}, but {type(fm.model[-1]).__name__} has no one2one "
+            f"head; use end2end={e2e}",
+            flush=True,
+        )
+    hyp = dict(DEFAULT_CFG_DICT, **fm.args) if isinstance(fm.args, dict) else {}
+    hyp.setdefault("box", 7.5)
+    hyp.setdefault("cls", 0.5)
+    hyp.setdefault("dfl", 1.5)
+    fm.args = SimpleNamespace(**hyp)
+    fm.criterion = fm.init_criterion()
+    fm.eval()
 
-cfg = copy.deepcopy(DEFAULT_CFG_DICT)
-cfg.update({"task": "detect", "mode": "val", "data": a.data, "imgsz": a.imgsz, "batch": a.batch,
-            "device": a.device, "workers": a.workers, "split": "val", "end2end": e2e, "conf": 0.001,
-            "iou": 0.7, "max_det": 300, "half": False, "plots": False,
-            "save_json": pycoco, "save_hybrid": False})
-validator = DetectionValidator(dataloader=vl, args=cfg)
-ft = FakeTrainer(fm, wrapper, data_dict, device, e2e)
-results = validator(trainer=ft)
-ul_map = results.get("metrics/mAP50-95(B)", 0.0)
-ul_map50 = results.get("metrics/mAP50(B)", 0.0)
+    head = fm.model[-1]
+    wrapper = OrtOne2One(
+        a.onnx,
+        device,
+        box_channels=4 * int(getattr(head, "reg_max", 1)),
+        score_channels=head.nc,
+        end2end=head.end2end,
+        strides=head.stride.tolist(),
+    )
+    input_hw = resolve_imgsz(a.imgsz, wrapper.input_hw)
+    print(f"[ort] {a.onnx} 加载成功（CPU EP，input={input_hw}，batch 固定 1 逐图）", flush=True)
 
-coco_map = None
-if pycoco and getattr(validator, "jdict", None):
-    validator.save_dir.mkdir(parents=True, exist_ok=True)
-    pj = validator.save_dir / "predictions.json"
-    with open(pj, "w") as f:
-        json.dump(validator.jdict, f)
-    print(f"[pycoco] {len(validator.jdict)} 条 → {pj}，eval_json ...", flush=True)
-    try:
-        st = validator.eval_json(dict(results))
-        coco_map = st.get("metrics/mAP50-95(B)", None)
-    except Exception:
-        import traceback
-        traceback.print_exc()
+    data_dict = check_det_dataset(a.data)
+    gs = max(int(fm.stride.max()), 32)
+    ns = argparse.Namespace(
+        task="detect", data=a.data, imgsz=input_hw, batch=a.batch, workers=a.workers, fraction=1.0,
+        augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0, hsv_s=0.0, hsv_v=0.0,
+        degrees=0.0, translate=0.0, scale=0.0, shear=0.0, perspective=0.0, mosaic=0.0, mixup=0.0,
+        cutmix=0.0, copy_paste=0.0, auto_augment=None, single_cls=False, classes=None, overlap_mask=False,
+        mask_ratio=4, rect=False, cache=False,
+    )
+    vds = build_yolo_dataset(ns, data_dict["val"], a.batch, data_dict, mode="val", rect=False, stride=gs)
+    vl = build_dataloader(vds, batch=a.batch, workers=a.workers, shuffle=False, rank=-1, drop_last=False)
 
-print("\n" + "=" * 60, flush=True)
-print(f">>> ONNX {a.onnx}  rect={rect}", flush=True)
-print(f"    ultralytics-metric  mAP50-95={ul_map:.4f}  mAP50={ul_map50:.4f}", flush=True)
-if coco_map is not None:
-    print(f"    pycocotools/COCO    mAP50-95={coco_map:.4f}", flush=True)
-print("=" * 60, flush=True)
-print("EVAL_ONNX_DONE", flush=True)
+    cfg = copy.deepcopy(DEFAULT_CFG_DICT)
+    cfg.update({
+        "task": "detect", "mode": "val", "data": a.data, "imgsz": input_hw[0], "batch": a.batch,
+        "device": a.device, "workers": a.workers, "split": "val", "end2end": e2e, "conf": 0.001,
+        "iou": 0.7, "max_det": 300, "half": False, "plots": False, "save_json": pycoco,
+        "save_hybrid": False,
+    })
+    validator = DetectionValidator(dataloader=vl, args=cfg)
+    results = validator(trainer=FakeTrainer(fm, wrapper, data_dict, device, e2e))
+    ul_map = results.get("metrics/mAP50-95(B)", 0.0)
+    ul_map50 = results.get("metrics/mAP50(B)", 0.0)
+
+    coco_map = None
+    if pycoco and getattr(validator, "jdict", None):
+        validator.save_dir.mkdir(parents=True, exist_ok=True)
+        predictions = validator.save_dir / "predictions.json"
+        with predictions.open("w", encoding="utf-8") as file:
+            json.dump(validator.jdict, file)
+        print(f"[pycoco] {len(validator.jdict)} 条 → {predictions}，eval_json ...", flush=True)
+        try:
+            stats = validator.eval_json(dict(results))
+            coco_map = stats.get("metrics/mAP50-95(B)", None)
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+
+    print("\n" + "=" * 60, flush=True)
+    print(f">>> ONNX {a.onnx}  rect={rect}", flush=True)
+    print(f"    ultralytics-metric  mAP50-95={ul_map:.4f}  mAP50={ul_map50:.4f}", flush=True)
+    if coco_map is not None:
+        print(f"    pycocotools/COCO    mAP50-95={coco_map:.4f}", flush=True)
+    print("=" * 60, flush=True)
+    print("EVAL_ONNX_DONE", flush=True)
+
+
+if __name__ == "__main__":
+    main()

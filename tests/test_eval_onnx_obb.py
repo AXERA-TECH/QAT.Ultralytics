@@ -8,9 +8,10 @@ from scripts.eval_backends.onnx_obb import OrtOBB
 
 
 class _Session:
-    def __init__(self, outputs, names=("boxes", "scores", "angle")):
+    def __init__(self, outputs, names=("boxes", "scores", "angle"), input_hw=(64, 64)):
         self.outputs = outputs
-        self.input = SimpleNamespace(name="images", shape=[1, 3, 64, 64])
+        self.input_hw = input_hw
+        self.input = SimpleNamespace(name="images", shape=[1, 3, *input_hw])
         self.output_meta = [SimpleNamespace(name=name) for name in names]
 
     def get_inputs(self):
@@ -20,7 +21,7 @@ class _Session:
         return self.output_meta
 
     def run(self, _output_names, feed):
-        assert feed["images"].shape == (1, 3, 64, 64)
+        assert feed["images"].shape == (1, 3, *self.input_hw)
         return self.outputs
 
 
@@ -79,3 +80,16 @@ def test_ort_obb_rejects_wrong_spatial_input():
 
     with pytest.raises(RuntimeError, match="expects spatial input"):
         wrapper(torch.zeros(1, 3, 32, 32))
+
+
+def test_ort_obb_supports_rectangular_input():
+    session = _Session(_outputs(126), input_hw=(64, 96))
+    wrapper = OrtOBB("unused.onnx", torch.device("cpu"), _head(), session=session)
+
+    predictions = wrapper(torch.zeros(2, 3, 64, 96))
+
+    assert [tuple(feat.shape) for feat in predictions["one2one"]["feats"]] == [
+        (2, 1, 8, 12),
+        (2, 1, 4, 6),
+        (2, 1, 2, 3),
+    ]

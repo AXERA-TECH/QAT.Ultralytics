@@ -259,6 +259,8 @@ env PYTHONPATH="$PWD" \
 
 YOLO11n 将 `--model` 换为 `yolo11n.yaml`、`--pretrained` 换为 `weights/yolo11n.pt`，其余参数相同；
 `eval.py onnx` 会从 head 自动读取 `reg_max=16` 进行 DFL 解码，无需单独后端。
+`onnx`、`onnx-obb` 和 `onnx-pose` 默认从 QuantONNX 的固定输入 shape 获取尺寸；矩形模型可显式传入
+`--imgsz 352 640`（顺序为 `height width`），但必须与 ONNX 输入完全一致。
 
 #### 分割
 
@@ -459,7 +461,8 @@ Split/Reshape 量化参数约束；其他任务按各自训练配置和输出契
 ### 8. 图片验证
 
 `test.py` 支持单张图片、目录或 glob，绘制结果默认保存到 `runs/predict/qat-test/`。使用
-`--save-txt --save-conf` 可同时保存标签。
+`--save-txt --save-conf` 可同时保存标签。`--imgsz 640` 表示方形输入，矩形 QAT checkpoint 可使用
+`--imgsz 352 640`（顺序为 `height width`）；QuantONNX 会直接采用模型中记录的固定输入尺寸。
 
 #### 检测
 

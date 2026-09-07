@@ -48,7 +48,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pretrained", default=None, help="Reference float checkpoint; defaults by --task.")
     parser.add_argument("--data", default=None, help="Classification dataset for class names (classify task only).")
     parser.add_argument("--device", default="cpu", help="PT2E and decode device, for example cpu, 0, or cuda:0.")
-    parser.add_argument("--imgsz", type=int, default=640, help="Square model input size.")
+    parser.add_argument(
+        "--imgsz",
+        nargs="+",
+        type=int,
+        default=[640, 640],
+        help="Model input size: one value for square input or two values for height width.",
+    )
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold.")
     parser.add_argument("--max-det", type=int, default=300, help="Maximum detections per image.")
     parser.add_argument("--project", default="runs/predict", help="Output project directory.")
@@ -62,6 +68,20 @@ def parse_args() -> argparse.Namespace:
 
 def as_bool(value) -> bool:
     return value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes"}
+
+
+def normalize_imgsz(imgsz: int | list[int] | tuple[int, ...]) -> tuple[int, int]:
+    """Normalize one or two image-size values to (height, width)."""
+    values = [imgsz] if isinstance(imgsz, int) else list(imgsz)
+    if len(values) == 1:
+        height = width = int(values[0])
+    elif len(values) == 2:
+        height, width = (int(value) for value in values)
+    else:
+        raise ValueError(f"Unsupported --imgsz {values}. Use one value or two values: height width.")
+    if height <= 0 or width <= 0:
+        raise ValueError(f"--imgsz values must be positive, got {height}x{width}.")
+    return height, width
 
 
 def find_images(source: str) -> list[Path]:
@@ -427,7 +447,7 @@ def _build_classify_qat_backend(args: argparse.Namespace, device: torch.device):
         with torch.inference_mode():
             return prepared(image).softmax(1)[0].float().cpu()
 
-    return infer, (args.imgsz, args.imgsz)
+    return infer, args.imgsz
 
 
 def _build_classify_onnx_backend(args: argparse.Namespace, device: torch.device):
@@ -467,7 +487,7 @@ def run_classify_inference(args: argparse.Namespace, device: torch.device) -> No
         infer, input_hw = _build_classify_onnx_backend(args, device)
         print(f"Loaded classify QuantONNX: {args.model} (input={input_hw[0]}x{input_hw[1]})")
 
-    transform = classify_transforms(input_hw[0])
+    transform = classify_transforms(input_hw)
     output_dir = increment_path(Path(args.project) / args.name, exist_ok=args.exist_ok, mkdir=True)
     for index, image_path in enumerate(image_paths, start=1):
         original = cv2.imread(str(image_path))
@@ -489,6 +509,7 @@ def run_classify_inference(args: argparse.Namespace, device: torch.device) -> No
 
 def main() -> None:
     args = parse_args()
+    args.imgsz = normalize_imgsz(args.imgsz)
     default_yaml, default_pretrained = TASK_DEFAULTS[args.task]
     args.model_yaml = args.model_yaml or default_yaml
     args.pretrained = args.pretrained or default_pretrained
@@ -508,7 +529,7 @@ def main() -> None:
 
     if model_path.suffix.lower() == ".pt":
         backend = QATCheckpointBackend(args, reference_model, device)
-        input_hw = (args.imgsz, args.imgsz)
+        input_hw = args.imgsz
         print(f"Loaded QAT checkpoint: {model_path} (config={backend.config_path})")
     else:
         backend = QuantONNXBackend(args, reference_model, device)

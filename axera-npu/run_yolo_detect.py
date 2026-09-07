@@ -20,6 +20,7 @@ COCO80_NAMES = [
     "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush",
 ]
+DETECTION_STRIDES = (8, 16, 32)
 
 
 def create_inference_session(model_path: str, runtime: str):
@@ -85,6 +86,24 @@ def coco80_to_coco91_class() -> list[int]:
         67, 70, 72, 73, 74, 75, 76, 77, 78, 79,
         80, 81, 82, 84, 85, 86, 87, 88, 89, 90,
     ]
+
+
+def infer_num_classes(output_metas, override: int | None = None) -> int:
+    """Infer class count from named score outputs, or use an explicit override."""
+    if override is not None:
+        if override <= 0:
+            raise ValueError(f"num_classes must be positive, got {override}")
+        return override
+    counts = {
+        int(meta.shape[1])
+        for meta in output_metas
+        if str(getattr(meta, "name", "")).startswith("scores")
+        and len(getattr(meta, "shape", ())) == 3
+        and isinstance(meta.shape[1], int)
+    }
+    if len(counts) == 1:
+        return counts.pop()
+    raise ValueError(f"Unable to infer class count; pass --num-classes explicitly. score channels={sorted(counts)}")
 
 
 class LetterBox:
@@ -196,6 +215,28 @@ def split_detection_outputs(outputs: list[np.ndarray], num_classes: int) -> list
     return [(regression[anchors], classification[anchors]) for anchors in sorted(regression, reverse=True)]
 
 
+def make_anchor_grid(input_hw: tuple[int, int], stride: int, anchor_count: int) -> np.ndarray:
+    """Build an HxW anchor grid for one detection scale and validate its flattened output size."""
+    input_h, input_w = (int(value) for value in input_hw)
+    if input_h % stride or input_w % stride:
+        raise ValueError(f"Input size {input_h}x{input_w} must be divisible by stride {stride}")
+
+    feature_h, feature_w = input_h // stride, input_w // stride
+    expected_anchors = feature_h * feature_w
+    if anchor_count != expected_anchors:
+        raise ValueError(
+            f"Anchor count mismatch at stride {stride}: expected {feature_h}x{feature_w}="
+            f"{expected_anchors}, got {anchor_count}"
+        )
+
+    gy, gx = np.meshgrid(
+        np.arange(feature_h, dtype=np.float32),
+        np.arange(feature_w, dtype=np.float32),
+        indexing="ij",
+    )
+    return np.stack((gx + 0.5, gy + 0.5), axis=-1).reshape(-1, 2)
+
+
 def decode_yolo26_distances(regression: np.ndarray) -> np.ndarray:
     """Convert the current YOLO26 [1, 4, N] ltrb-distance output to [N, 4]."""
     if regression.ndim != 3 or regression.shape[0] != 1:
@@ -303,24 +344,15 @@ def decode_yolo_detection(
     YOLO26 one-to-one uses head top-k selection, while YOLO26 one-to-many and YOLO11 use class-aware NMS. In auto
     mode, DFL regression and the stable ``boxes_p*``/``scores_p*`` output names select one-to-many.
     """
-    if input_hw[0] != input_hw[1]:
-        raise ValueError(f"Only square detection inputs are supported, got {input_hw}")
     if head_type not in {"auto", "one2one", "one2many"}:
         raise ValueError(f"Unsupported head type: {head_type}")
 
     predictions = []
     output_pairs = split_detection_outputs(outputs, num_classes)
     uses_dfl = any(regression.shape[1] > 4 for regression, _ in output_pairs)
-    for regression, classification in output_pairs:
+    for (regression, classification), stride in zip(output_pairs, DETECTION_STRIDES):
         anchor_count = regression.shape[2]
-        feature_size = int(np.sqrt(anchor_count))
-        if feature_size * feature_size != anchor_count or input_hw[0] % feature_size:
-            raise ValueError(f"Cannot derive a square feature map from {anchor_count} anchors")
-        stride = input_hw[0] // feature_size
-        gy, gx = np.meshgrid(
-            np.arange(feature_size, dtype=np.float32), np.arange(feature_size, dtype=np.float32), indexing="ij"
-        )
-        anchors = np.stack((gx + 0.5, gy + 0.5), axis=-1).reshape(-1, 2)
+        anchors = make_anchor_grid(input_hw, stride, anchor_count)
         # Both branches return ltrb distances in feature-grid units. Convert them to input-image xyxy coordinates.
         distances = decode_regression(regression)
         xyxy = np.concatenate((anchors - distances[:, :2], anchors + distances[:, 2:]), axis=1) * stride
@@ -355,6 +387,7 @@ class YOLODetectPredictor:
         max_det: int = 300,
         runtime: str = "auto",
         head_type: str = "auto",
+        num_classes: int | None = None,
     ):
         if head_type not in {"auto", "one2one", "one2many"}:
             raise ValueError(f"Unsupported head type: {head_type}")
@@ -363,10 +396,11 @@ class YOLODetectPredictor:
         self.iou_thres = iou_thres
         self.max_det = max_det
         self.head_type = head_type
-        self.cls_map = coco80_to_coco91_class()
         self.session, self.runtime = create_inference_session(model_path, runtime)
         input_meta = self.session.get_inputs()[0]
         self.output_names = [item.name for item in self.session.get_outputs()]
+        self.num_classes = infer_num_classes(self.session.get_outputs(), num_classes)
+        self.cls_map = coco80_to_coco91_class() if self.num_classes == 80 else list(range(self.num_classes))
         self.input_name = input_meta.name
         _, _, self.input_h, self.input_w = input_meta.shape
         self.letterbox = LetterBox(new_shape=(self.input_h, self.input_w), auto=False, stride=32)
@@ -376,7 +410,7 @@ class YOLODetectPredictor:
         self.vis_conf = 0.25
         self.vis_limit = 0
         self.vis_count = 0
-        self.class_names = COCO80_NAMES
+        self.class_names = COCO80_NAMES if self.num_classes == 80 else [str(i) for i in range(self.num_classes)]
 
     def preprocess(self, image_path: str) -> tuple[np.ndarray, dict]:
         image = cv2.imread(image_path)
@@ -396,7 +430,7 @@ class YOLODetectPredictor:
     def postprocess(self, outputs: list[np.ndarray], meta: dict) -> None:
         pred = decode_yolo_detection(
             outputs,
-            num_classes=80,
+            num_classes=self.num_classes,
             max_det=self.max_det,
             input_hw=(self.input_h, self.input_w),
             conf_thres=self.conf_thres,
@@ -468,6 +502,7 @@ def parse_args():
     parser.add_argument("--save-vis", type=str, default="", help="Directory to save visualized detections; empty disables.")
     parser.add_argument("--vis-conf", type=float, default=0.25, help="Confidence threshold for drawn boxes.")
     parser.add_argument("--vis-limit", type=int, default=50, help="Max number of images to visualize.")
+    parser.add_argument("--num-classes", type=int, default=None, help="Class count fallback when output names are lost.")
     return parser.parse_args()
 
 
@@ -485,7 +520,7 @@ def main():
         raise NotADirectoryError(f"Image directory not found: {img_dir}")
 
     predictor = YOLODetectPredictor(
-        args.model, args.conf_thres, args.iou_thres, args.max_det, args.runtime, args.head_type
+        args.model, args.conf_thres, args.iou_thres, args.max_det, args.runtime, args.head_type, args.num_classes
     )
     print(f"runtime: {predictor.runtime}")
     if args.save_vis:

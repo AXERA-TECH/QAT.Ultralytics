@@ -149,6 +149,8 @@ YOLO11n 检测使用 `axera-npu/config_yolo11n_qat.json`（或 `config_yolo11n_s
 | `test.py --task pose` / `eval.py onnx-pose` | Pose 主机侧验证 | 检测框与关键点 |
 | `test.py --task classify` | 分类主机侧验证 | 单个 `logits`（host 端 softmax → Top-K） |
 
+两个脚本均从模型读取固定输入高宽，支持高宽可被最大 stride 32 整除的方形或矩形输入；例如 `352x640`。
+
 OBB、Pose 和分类尚无独立 AXModel 推理脚本。
 
 - **依赖**：这两个脚本只依赖 `numpy`、`opencv-python`、`tqdm` 和所选运行时；分割 JSON 导出额外需要 `pycocotools`。它们不依赖 `torch` 或 `ultralytics`，可作为 C++ 后处理的数值参考。

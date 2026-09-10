@@ -18,6 +18,7 @@ from ultralytics.data.utils import check_det_dataset
 from ultralytics.models.yolo.obb.val import OBBValidator
 from ultralytics.utils import DEFAULT_CFG_DICT
 from ultralytics.utils.torch_utils import select_device
+from scripts.eval_backends.onnx_utils import resolve_imgsz
 
 
 def parse_bool(value: str | bool) -> bool:
@@ -46,6 +47,11 @@ class OrtOBB(torch.nn.Module):
         if len(input_shape) != 4 or not all(isinstance(value, int) for value in input_shape[-2:]):
             raise RuntimeError(f"OBB QuantONNX must have fixed NCHW spatial dimensions, got {input_shape}")
         self.input_hw = tuple(input_shape[-2:])
+        if any(self.input_hw[0] % stride or self.input_hw[1] % stride for stride in self.strides):
+            raise RuntimeError(f"OBB QuantONNX input {self.input_hw} must be divisible by strides {self.strides}")
+        self.anchor_count = sum(
+            (self.input_hw[0] // stride) * (self.input_hw[1] // stride) for stride in self.strides
+        )
 
     def _classify_outputs(self, outputs):
         tensors = [torch.from_numpy(np.asarray(output)).to(self.device) for output in outputs]
@@ -90,6 +96,8 @@ class OrtOBB(torch.nn.Module):
         anchors = {tensor.shape[2] for tensor in outputs.values()}
         if len(anchors) != 1:
             raise RuntimeError("OBB QuantONNX outputs must use the same anchor count")
+        if anchors != {self.anchor_count}:
+            raise RuntimeError(f"OBB QuantONNX expected {self.anchor_count} anchors, got {anchors.pop()}")
 
     def forward(self, x):
         if tuple(x.shape[-2:]) != self.input_hw:
@@ -160,7 +168,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pretrained", default="weights/yolo26n-obb.pt")
     parser.add_argument("--data", default="dota8.yaml")
     parser.add_argument("--device", default="cpu", help="Device used for decode and metrics; ORT runs on CPU.")
-    parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--imgsz", nargs="+", type=int, default=None, help="Optional ONNX input size: height width.")
     parser.add_argument("--batch", type=int, default=16, help="Dataloader batch; ORT still runs one image at a time.")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--rect", type=parse_bool, default=False)
@@ -192,13 +200,12 @@ def main() -> None:
     float_model.eval()
 
     wrapper = OrtOBB(args.onnx, device, float_model.model[-1])
-    if wrapper.input_hw != (args.imgsz, args.imgsz):
-        raise ValueError(f"--imgsz {args.imgsz} does not match QuantONNX input {wrapper.input_hw}")
+    input_hw = resolve_imgsz(args.imgsz, wrapper.input_hw)
     print(f"[ort] loaded OBB QuantONNX {args.onnx} (CPU EP, input={wrapper.input_hw})", flush=True)
 
     stride = max(int(float_model.stride.max()), 32)
     dataset_args = argparse.Namespace(
-        task="obb", data=args.data, imgsz=args.imgsz, batch=args.batch, workers=args.workers, fraction=1.0,
+        task="obb", data=args.data, imgsz=input_hw, batch=args.batch, workers=args.workers, fraction=1.0,
         augment=False, erasing=0.0, flipud=0.0, fliplr=0.0, hsv_h=0.0, hsv_s=0.0, hsv_v=0.0,
         degrees=0.0, translate=0.0, scale=0.0, shear=0.0, perspective=0.0, mosaic=0.0,
         mixup=0.0, cutmix=0.0, copy_paste=0.0, auto_augment=None, single_cls=False, classes=None,
@@ -213,7 +220,7 @@ def main() -> None:
 
     validator_args = copy.deepcopy(DEFAULT_CFG_DICT)
     validator_args.update(
-        task="obb", mode="val", data=args.data, imgsz=args.imgsz, batch=args.batch, device=args.device,
+        task="obb", mode="val", data=args.data, imgsz=input_hw[0], batch=args.batch, device=args.device,
         workers=args.workers, split="val", end2end=True, conf=0.001, iou=0.7, max_det=300, half=False,
         plots=False, save_json=args.save_json, save_hybrid=False,
     )

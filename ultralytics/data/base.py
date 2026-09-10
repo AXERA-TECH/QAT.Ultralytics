@@ -28,7 +28,7 @@ class BaseDataset(Dataset):
 
     Attributes:
         img_path (str | list[str]): Path to the folder containing images.
-        imgsz (int): Target image size for resizing.
+        imgsz (int | tuple[int, int] | list[int]): Target image size for resizing.
         augment (bool): Whether to apply data augmentation.
         single_cls (bool): Whether to treat all objects as a single class.
         prefix (str): Prefix to print in log messages.
@@ -72,7 +72,7 @@ class BaseDataset(Dataset):
     def __init__(
         self,
         img_path: str | list[str],
-        imgsz: int = 640,
+        imgsz: int | tuple[int, int] | list[int] = 640,
         cache: bool | str = False,
         augment: bool = True,
         hyp: dict[str, Any] = DEFAULT_CFG,
@@ -90,7 +90,8 @@ class BaseDataset(Dataset):
 
         Args:
             img_path (str | list[str]): Path to the folder containing images or list of image paths.
-            imgsz (int): Image size for resizing.
+            imgsz (int | tuple[int, int] | list[int]): Image size for resizing. Validation datasets may use
+                ``(height, width)``; training and rectangular batching use an integer.
             cache (bool | str): Cache images to RAM or disk during training.
             augment (bool): If True, data augmentation is applied.
             hyp (dict[str, Any]): Hyperparameters to apply data augmentation.
@@ -107,8 +108,19 @@ class BaseDataset(Dataset):
         """
         super().__init__()
         self.img_path = img_path
+        if isinstance(imgsz, (tuple, list)):
+            if len(imgsz) == 1:
+                imgsz = int(imgsz[0])
+            elif len(imgsz) == 2:
+                imgsz = tuple(int(value) for value in imgsz)
+            else:
+                raise ValueError(f"imgsz must contain one or two values, got {imgsz}")
+        if isinstance(imgsz, tuple) and any(value <= 0 for value in imgsz):
+            raise ValueError(f"imgsz values must be positive, got {imgsz}")
         self.imgsz = imgsz
         self.augment = augment
+        if isinstance(imgsz, tuple) and (augment or rect):
+            raise ValueError("Two-dimensional imgsz is only supported for fixed-shape validation with rect=False")
         self.single_cls = single_cls
         self.prefix = prefix
         self.fraction = fraction
@@ -237,13 +249,24 @@ class BaseDataset(Dataset):
                 raise FileNotFoundError(f"Image Not Found {f}")
 
             h0, w0 = im.shape[:2]  # orig hw
-            if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
-                r = self.imgsz / max(h0, w0)  # ratio
+            if isinstance(self.imgsz, (tuple, list)):
+                target_h, target_w = (int(value) for value in self.imgsz)
+                resize_size = None
+            else:
+                target_h = target_w = resize_size = int(self.imgsz)
+
+            if rect_mode:  # resize while maintaining aspect ratio
+                r = (
+                    min(target_h / h0, target_w / w0)
+                    if resize_size is None
+                    else resize_size / max(h0, w0)
+                )
                 if r != 1:  # if sizes are not equal
-                    w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                    w = min(math.ceil(w0 * r), target_w)
+                    h = min(math.ceil(h0 * r), target_h)
                     im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
-            elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
-                im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            elif not (h0 == target_h and w0 == target_w):  # resize by stretching image to target imgsz
+                im = cv2.resize(im, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
             if im.ndim == 2:
                 im = im[..., None]
 
@@ -332,7 +355,10 @@ class BaseDataset(Dataset):
             im = imread(random.choice(self.im_files))  # sample image
             if im is None:
                 continue
-            ratio = self.imgsz / max(im.shape[0], im.shape[1])  # max(h, w)  # ratio
+            if isinstance(self.imgsz, (tuple, list)):
+                ratio = min(self.imgsz[0] / im.shape[0], self.imgsz[1] / im.shape[1])
+            else:
+                ratio = self.imgsz / max(im.shape[0], im.shape[1])  # max(h, w)  # ratio
             b += im.nbytes * ratio**2
         mem_required = b * self.ni / n * (1 + safety_margin)  # GB required to cache dataset into RAM
         mem = __import__("psutil").virtual_memory()

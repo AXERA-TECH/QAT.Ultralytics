@@ -1710,6 +1710,7 @@ def _is_share_obs_or_fq_op(op: Callable) -> bool:
         # identity
         torch.ops.aten.clone.default,
         torch.ops.aten.contiguous.default,
+        torch.ops.aten.detach.default,
         # transpose
         torch.ops.aten.permute.default,
         torch.ops.aten.permute_copy.default,

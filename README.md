@@ -9,15 +9,18 @@
 
 ### 检测
 
-以下为当前 AXERA NPU 实测结果：
+以下为当前量化精度结果；`Speed(ms)` 为已完成 AXERA NPU 部署模型的板端实测耗时：
 
-| 模型 | `end2end` | 配置 | FP32 mAP50-95 | FP32 mAP50 | QAT mAP50-95 | QAT mAP50 | Err mAP:50~95 | Err mAP:50 | Speed(ms) |
+| 模型 | `end2end` | 配置 | FP32 mAP50-95 | FP32 mAP50 | 量化 mAP50-95 | 量化 mAP50 | Err mAP:50~95 | Err mAP:50 | Speed(ms) |
 |---|---|---|---|---|---|---|---|---|---|
 | YOLO26n | `true` | ptq(w8a8_siluInU16) | 40.24 | 55.79 | 37.83 | 53.54 | -2.41 | -2.25 | 3.613 |
 | YOLO26n | `true` | `config_siluInU16_attnS8_clsU16.json` | 40.24 | 55.79 | 39.61 | 55.63 | -0.63 | -0.16 | 3.761 |
 | YOLO26n | `true` | `config_siluInU8_attnS8_clsU16.json` | 40.24 | 55.79 | 39.39 | 55.37 | -0.85 | -0.42 | 3.656 |
 | YOLO26n | `false` | ptq(w8a8_siluInU16) | 40.87 | 56.87 | 39.52 | 55.78 | -1.35  | -1.09 | 3.616 |
 | YOLO26n | `false` | `config_siluInU8_attnS8_clsU16_one2many.json` | 40.87 | 56.87 | 39.97 | 56.57 | -0.9 | -0.3 | 3.647 |
+| YOLO26s | `true` | ptq(w8a8_siluInU16) | 47.80 | 63.88 | 46.14 | 63.05 | -1.66 | -0.83 | 8.981 |
+| YOLO26s | `true` | `config_yolo26s_siluInU16_attnS8.json` | 47.80 | 63.88 | 46.95 | 63.98 | -0.85 | +0.1 | 9.163 |
+| YOLO26s | `true` | `config_yolo26s_siluInU16_attnS8_clsU16.json` | 47.80 | 63.88 | 46.81 | 63.79 | -0.99 | -0.09 | 9.355 |
 | YOLO11n | `None` | ptq(w8a8_siluInU16) | 39.4 | 55.3 | 38.8 | 54.55 | -0.6 | -0.75 | 3.934 |
 | YOLO11n | `None` | `config_yolo11n_siluInU8_attnS8.json` | 39.4 | 55.3 | 38.45 | 54.46 | -0.95 | -0.84 | 3.814 |
 | YOLO11n | `None` | `config_yolo11n_siluInU16_attnS8.json` | 39.4 | 55.3 | 38.84 | 54.86 | -0.56 | -0.44 | 3.851 |
@@ -69,7 +72,7 @@ pip install -e .
 ```bash
 env PYTHONPATH="$PWD" \
   python train_qat.py \
-  --profile throughput --device 0 --epochs 1 --batch 2 --imgsz 64 \
+  --profile throughput --device 0 --epochs 1 --batch 2 --imgsz 640 \
   --workers 0 --fraction 0.01 --name qat-delivery-smoke --exist-ok
 ```
 
@@ -194,7 +197,7 @@ env PYTHONPATH="$PWD" CUDA_DEVICE_ORDER=PCI_BUS_ID \
 env PYTHONPATH="$PWD" \
   python train_gpus.py \
   --profile throughput --devices 0,1 \
-  --epochs 1 --batch 4 --imgsz 64 --workers 0 --fraction 0.01 \
+  --epochs 1 --batch 4 --imgsz 640 --workers 0 --fraction 0.01 \
   --name qat-ddp-smoke --exist-ok
 ```
 

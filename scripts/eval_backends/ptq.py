@@ -110,7 +110,9 @@ def main():
     quantizer.set_global(gc)
     quantizer.set_regional(rc)
 
-    inputs = torch.rand(1, 3, args.imgsz, args.imgsz, device=device)
+    # Use the requested batch for the export example.  A batch-1 example makes
+    # torch.export infer a constant batch and reject the declared 1..128 range.
+    inputs = torch.rand(args.batch, 3, args.imgsz, args.imgsz, device=device)
     LOGGER.info("Exporting float model...")
     t0 = time.time()
     ep = torch.export.export_for_training(

@@ -1,0 +1,291 @@
+{
+    "global_config": {
+        "is_symmetric": false,
+        "act_observer": "moving_avg",
+        "weight_observer": "moving_avg_per_channel",
+        "input": {
+            "dtype": "U8",
+            "qmin": 0,
+            "qmax": 255
+        },
+        "weight": {
+            "dtype": "S8",
+            "qmin": -127,
+            "qmax": 127
+        },
+        "share_qparam": true
+    },
+    "regional_configs": [
+        {
+            "module_names": null,
+            "module_type": "matmul",
+            "module_config": {
+                "is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "matmul",
+                "matmul_2"
+            ],
+            "module_type": "matmul",
+            "module_config": {
+                "is_symmetric": true,
+                "output_is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                },
+                "output": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": null,
+            "module_type": "gridsample",
+            "module_config": {
+                "is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": null,
+            "module_type": "silu",
+            "module_config": {
+                "is_symmetric": false,
+                "output_is_symmetric": false,
+                "act_observer": "moving_avg",
+                "input": {
+                    "dtype": "U8",
+                    "qmin": 0,
+                    "qmax": 255
+                },
+                "output": {
+                    "dtype": "U8",
+                    "qmin": 0,
+                    "qmax": 255
+                }
+            }
+        },
+        {
+            "module_names": [
+                "silu__97",
+                "silu__98",
+                "silu__99",
+                "silu__100",
+                "silu__101",
+                "silu__102",
+                "silu__103",
+                "silu__104"
+            ],
+            "module_type": "silu",
+            "module_config": {
+                "is_symmetric": false,
+                "output_is_symmetric": false,
+                "act_observer": "moving_avg",
+                "input": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "output": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                }
+            }
+        },
+        {
+            "module_names": [
+                "silu__68"
+            ],
+            "module_type": "silu",
+            "module_config": {
+                "is_symmetric": false,
+                "output_is_symmetric": false,
+                "act_observer": "moving_avg",
+                "input": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "output": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                }
+            }
+        },
+        {
+            "module_names": [
+                "conv2d_117",
+                "conv2d_118",
+                "conv2d_119",
+                "conv2d_121",
+                "conv2d_122",
+                "conv2d_123",
+                "conv2d_124"
+            ],
+            "module_type": "conv",
+            "module_config": {
+                "is_symmetric": false,
+                "input": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "weight": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "conv2d_120",
+                "conv2d_125"
+            ],
+            "module_type": "conv",
+            "module_config": {
+                "is_symmetric": false,
+                "output_is_symmetric": false,
+                "input": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "output": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "weight": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "conv2d_108"
+            ],
+            "module_type": "conv",
+            "module_config": {
+                "is_symmetric": false,
+                "input": {
+                    "dtype": "U16",
+                    "qmin": 0,
+                    "qmax": 65535
+                },
+                "weight": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "mul_75",
+                "mul_152"
+            ],
+            "module_type": "mul",
+            "module_config": {
+                "is_symmetric": true,
+                "output_is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                },
+                "output": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "softmax",
+                "softmax_1"
+            ],
+            "module_type": "softmax",
+            "module_config": {
+                "is_symmetric": true,
+                "output_is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                },
+                "output": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "conv2d_34",
+                "conv2d_72"
+            ],
+            "module_type": "conv",
+            "module_config": {
+                "is_symmetric": false,
+                "output_is_symmetric": true,
+                "input": {
+                    "dtype": "U8",
+                    "qmin": 0,
+                    "qmax": 255
+                },
+                "output": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                },
+                "weight": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        },
+        {
+            "module_names": [
+                "conv2d_35",
+                "conv2d_73"
+            ],
+            "module_type": "conv",
+            "module_config": {
+                "is_symmetric": true,
+                "input": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                },
+                "weight": {
+                    "dtype": "S8",
+                    "qmin": -127,
+                    "qmax": 127
+                }
+            }
+        }
+    ]
+}

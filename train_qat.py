@@ -2,7 +2,7 @@ import argparse
 import os
 from pathlib import Path
 
-os.environ.setdefault("ULTRALYTICS_SKIP_DATASET_HASH", "1")
+os.environ.setdefault("ULTRALYTICS_SKIP_DATASET_HASH", "0")
 
 from ultralytics import YOLO
 from ultralytics.data.utils import check_det_dataset
@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task", choices=("detect", "segment", "obb", "pose", "classify"), default="detect")
     parser.add_argument("--model", default="yolo26n.yaml")
     parser.add_argument("--pretrained", default="yolo26n.pt")
+    parser.add_argument("--resume", metavar="PATH", help="Resume QAT training from a saved last.pt checkpoint.")
     parser.add_argument("--data", default="coco.yaml")
     parser.add_argument("--device", default="0")
     parser.add_argument("--epochs", type=int, default=50)
@@ -73,11 +74,17 @@ def resolve_project_dir(project: str | None, task: str) -> str:
 def main() -> None:
     args = parse_args()
     config, default_name = resolve_config_and_name(args)
-    if not Path(args.pretrained).is_file():
-        raise FileNotFoundError(f"Missing pretrained checkpoint: {args.pretrained}")
+    if args.resume:
+        resume_path = Path(args.resume)
+        if not resume_path.is_file():
+            raise FileNotFoundError(f"Missing resume checkpoint: {resume_path}")
+        model = YOLO(str(resume_path), task=args.task)
+    else:
+        if not Path(args.pretrained).is_file():
+            raise FileNotFoundError(f"Missing pretrained checkpoint: {args.pretrained}")
+        model = YOLO(args.model, task=args.task)
 
-    model = YOLO(args.model, task=args.task)
-    if args.task in {"obb", "pose"}:
+    if not args.resume and args.task in {"obb", "pose"}:
         # OBB/Pose YAML defaults may not match the dataset class/keypoint shape.
         # Build the dataset-sized head before loading the checkpoint so task
         # head weights are retained instead of being skipped as shape mismatches.
@@ -86,7 +93,8 @@ def main() -> None:
         if args.task == "pose":
             kwargs["data_kpt_shape"] = data["kpt_shape"]
         model.model = model.task_map[args.task]["model"](args.model, **kwargs)
-    model.load(args.pretrained)
+    if not args.resume:
+        model.load(args.pretrained)
     train_kwargs = dict(
         data=args.data,
         batch=args.batch,
@@ -106,6 +114,8 @@ def main() -> None:
         lr0=args.lr0,
         lrf=args.lrf,
     )
+    if args.resume:
+        train_kwargs["resume"] = True
     if args.task != "classify":
         # end2end selects the one2one/one2many detection head path; classification has no such branch.
         train_kwargs["end2end"] = args.end2end

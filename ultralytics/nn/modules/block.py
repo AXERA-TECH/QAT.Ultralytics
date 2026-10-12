@@ -177,7 +177,8 @@ class HGBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of a PPHGNetV2 backbone layer."""
         y = [x]
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         y = self.ec(self.sc(torch.cat(y, 1)))
         return y + x if self.add else y
 
@@ -310,14 +311,15 @@ class C2f(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through C2f layer."""
         y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         return self.cv2(torch.cat(y, 1))
 
     def forward_split(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass using split() instead of chunk()."""
-        y = self.cv1(x).split((self.c, self.c), 1)
-        y = [y[0], y[1]]
-        y.extend(m(y[-1]) for m in self.m)
+        y = list(self.cv1(x).split((self.c, self.c), 1))
+        for block in self.m:
+            y.append(block(y[-1]))
         return self.cv2(torch.cat(y, 1))
 
 
@@ -667,7 +669,8 @@ class C2fAttn(nn.Module):
             (torch.Tensor): Output tensor after processing.
         """
         y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         y.append(self.attn(y[-1], guide))
         return self.cv2(torch.cat(y, 1))
 
@@ -682,7 +685,8 @@ class C2fAttn(nn.Module):
             (torch.Tensor): Output tensor after processing.
         """
         y = list(self.cv1(x).split((self.c, self.c), 1))
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         y.append(self.attn(y[-1], guide))
         return self.cv2(torch.cat(y, 1))
 
@@ -890,13 +894,15 @@ class RepNCSPELAN4(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through RepNCSPELAN4 layer."""
         y = list(self.cv1(x).chunk(2, 1))
-        y.extend((m(y[-1])) for m in [self.cv2, self.cv3])
+        for block in (self.cv2, self.cv3):
+            y.append(block(y[-1]))
         return self.cv4(torch.cat(y, 1))
 
     def forward_split(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass using split() instead of chunk()."""
         y = list(self.cv1(x).split((self.c, self.c), 1))
-        y.extend(m(y[-1]) for m in [self.cv2, self.cv3])
+        for block in (self.cv2, self.cv3):
+            y.append(block(y[-1]))
         return self.cv4(torch.cat(y, 1))
 
 
@@ -987,7 +993,8 @@ class SPPELAN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through SPPELAN layer."""
         y = [self.cv1(x)]
-        y.extend(m(y[-1]) for m in [self.cv2, self.cv3, self.cv4])
+        for block in (self.cv2, self.cv3, self.cv4):
+            y.append(block(y[-1]))
         return self.cv5(torch.cat(y, 1))
 
 
@@ -1064,7 +1071,8 @@ class C3f(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through C3f layer."""
         y = [self.cv2(x), self.cv1(x)]
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         return self.cv3(torch.cat(y, 1))
 
 
@@ -1634,7 +1642,8 @@ class TorchVision(nn.Module):
         """
         if self.split:
             y = [x]
-            y.extend(m(y[-1]) for m in self.m)
+            for block in self.m:
+                y.append(block(y[-1]))
         else:
             y = self.m(x)
         return y
@@ -1863,7 +1872,8 @@ class A2C2f(nn.Module):
             (torch.Tensor): Output tensor after processing.
         """
         y = [self.cv1(x)]
-        y.extend(m(y[-1]) for m in self.m)
+        for block in self.m:
+            y.append(block(y[-1]))
         y = self.cv2(torch.cat(y, 1))
         if self.gamma is not None:
             return x + self.gamma.view(-1, self.gamma.shape[0], 1, 1) * y

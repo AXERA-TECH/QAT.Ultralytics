@@ -45,7 +45,7 @@ env PYTHONPATH="$PWD" \
   --profile throughput --device 0
 ```
 
-正式训练前先使用小图片尺寸、少量数据和 1 epoch 做 smoke。当前交付 profile 使用 `end2end=True`、`qat_validate=True`、`qat_ema=False`。
+正式训练前先使用 `imgsz=640`、少量数据（`--fraction 0.01`）和 1 epoch 做 smoke；不要使用小图尺寸，QAT 图按 `imgsz` 构建，与正式训练图必须一致。当前交付 profile 使用 `end2end=True`、`qat_validate=True`、`qat_ema=False`。
 
 #### 其他单卡任务
 
@@ -189,7 +189,8 @@ env PYTHONPATH="$PWD" \
 - `runs/`
 - `weights/`
 - `yolo26_onnx/`
+- `cache/`（含 `cache/debug/` 分析产物）
 - `todos/`
 - `todos-seg/`
 
-源码、最终量化配置、`axera-npu/`、测试和 `.codex/skills/yolo26-qat-delivery/` 应保持可跟踪。
+源码、最终量化配置、`axera-npu/`、测试和 `.codex/skills/` 应保持可跟踪。

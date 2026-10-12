@@ -31,7 +31,7 @@ description: 在本仓库训练、导出和验收最终 YOLO26n PT2E QAT 交付�
 ```bash
 env PYTHONPATH="$PWD" \
   python train_qat.py \
-  --profile throughput --device 0 --epochs 1 --batch 2 --imgsz 64 \
+  --profile throughput --device 0 --epochs 1 --batch 2 --imgsz 640 \
   --workers 0 --fraction 0.01 --name qat-delivery-smoke --exist-ok
 ```
 

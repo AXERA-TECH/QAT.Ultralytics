@@ -21,7 +21,7 @@ backbone:
   - [-1, 6, C2f, [512, True]]
   - [-1, 1, SCDown, [1024, 3, 2]] # 7-P5/32
   - [-1, 3, C2fCIB, [1024, True, True]]
-  - [-1, 1, SPPF, [1024, 5]] # 9
+  - [-1, 1, SPPF, [1024, 5, 3, False, True]] # 9 (legacy official checkpoints activate cv1)
   - [-1, 1, PSA, [1024]] # 10
 
 # YOLOv10 head

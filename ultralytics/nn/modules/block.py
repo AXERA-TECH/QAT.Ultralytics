@@ -209,7 +209,7 @@ class SPP(nn.Module):
 class SPPF(nn.Module):
     """Spatial Pyramid Pooling - Fast (SPPF) layer for YOLOv5 by Glenn Jocher."""
 
-    def __init__(self, c1: int, c2: int, k: int = 5, n: int = 3, shortcut: bool = False):
+    def __init__(self, c1: int, c2: int, k: int = 5, n: int = 3, shortcut: bool = False, act: bool = False):
         """Initialize the SPPF layer with given input/output channels and kernel size.
 
         Args:
@@ -218,13 +218,14 @@ class SPPF(nn.Module):
             k (int): Kernel size.
             n (int): Number of pooling iterations.
             shortcut (bool): Whether to use shortcut connection.
+            act (bool): Whether to apply the activation after cv1 (legacy YOLOv10 checkpoints use True).
 
         Notes:
             This module is equivalent to SPP(k=(5, 9, 13)).
         """
         super().__init__()
         c_ = c1 // 2  # hidden channels
-        self.cv1 = Conv(c1, c_, 1, 1, act=False)
+        self.cv1 = Conv(c1, c_, 1, 1, act=act)
         self.cv2 = Conv(c_ * (n + 1), c2, 1, 1)
         self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
         self.n = n
